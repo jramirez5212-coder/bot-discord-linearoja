@@ -1,3 +1,4 @@
+console.log("YA CONECTADO");
 // ===== IMPORTS =====
 const {
     Client,
