@@ -52,8 +52,8 @@ const CATEGORIAS = {
 
 // ===== ROLES POR TICKET =====
 const ROLES_TICKETS = {
-    ck: ["1495581819167309886"], // Tickets Cks/PKTs
-    apelacion: ["1495581737017802843"], // Tickets Baneos
+    ck: ["1495581819167309886"],
+    apelacion: ["1495581737017802843"],
     postulaciones: ["1495196578246557889"],
     reportes: ["1495196578246557889"],
     soporte: ["1495196578246557889"],
