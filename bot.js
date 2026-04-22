@@ -291,6 +291,9 @@ async function crearTicket(interaction, tipo, extra = "") {
         permissionOverwrites: permisos
     });
 
+    // 🔥 ESTE ES EL FIX REAL (NO TOCAR MÁS)
+    await canal.permissionOverwrites.set(permisos);
+
     const embed = new EmbedBuilder()
         .setAuthor({ name: "LineaRojaRp", iconURL: IMAGEN_LOGO })
         .setDescription(`Bienvenido a los tickets **LineaRojaRp**. Los miembros del staff te atenderán lo más rápido posible.${extra ? `\n\n${extra}` : ""}`)
