@@ -1,5 +1,3 @@
-console.log("CAMBIOOOOOOOOO");
-
 // ===== IMPORTS =====
 const {
     Client,
@@ -36,7 +34,7 @@ const TOKEN = process.env.TOKEN;
 const CANAL_BIENVENIDA_ID = "1495196891124600853";
 const CANAL_TICKETS_PANEL = "1495196994329645149";
 const CANAL_PANEL_EMBEDS = "1495196970032304128";
-
+const ROL_STAFF = "1495196578246557889";
 
 const IMAGEN_BANNER = "https://cdn.discordapp.com/attachments/1495196888562012191/1495554719353933934/banner_nombre_logo.png";
 const IMAGEN_LOGO = "https://cdn.discordapp.com/attachments/1495196888562012191/1495554787712696463/LINEAROJA_LOGO.png";
@@ -261,13 +259,18 @@ async function crearTicket(interaction, tipo, extra = "") {
     const permisos = [
         {
             id: interaction.guild.id,
-            deny: [PermissionsBitField.Flags.ViewChannel]
+            deny: [
+                PermissionsBitField.Flags.ViewChannel
+            ]
         },
         {
             id: user.id,
             allow: [
                 PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.AttachFiles,
+                PermissionsBitField.Flags.EmbedLinks
             ]
         }
     ];
@@ -280,7 +283,10 @@ async function crearTicket(interaction, tipo, extra = "") {
             allow: [
                 PermissionsBitField.Flags.ViewChannel,
                 PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ManageChannels
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.ManageChannels,
+                PermissionsBitField.Flags.AttachFiles,
+                PermissionsBitField.Flags.EmbedLinks
             ]
         });
     }
@@ -293,7 +299,6 @@ async function crearTicket(interaction, tipo, extra = "") {
         permissionOverwrites: permisos
     });
 
-    // 🔥 ESTE ES EL FIX REAL (NO TOCAR MÁS)
     await canal.permissionOverwrites.set(permisos);
 
     const embed = new EmbedBuilder()
