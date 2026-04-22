@@ -173,7 +173,7 @@ client.on("messageCreate", async (message) => {
                     },
                     {
                         label: "Donaciones",
-                        description: "Si deseas donar al servidor presiona acá.",
+                        description: "Si deseas donar al servidor presiona aca.",
                         value: "donaciones",
                         emoji: { id: "1192599916787277845", name: "chack" }
                     },
