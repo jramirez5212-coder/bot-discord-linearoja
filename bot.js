@@ -50,6 +50,16 @@ const CATEGORIAS = {
     ck: { nombre: "Solicitar CK / PKT", parentId: "1495582706359074938" }
 };
 
+// ===== ROLES POR TICKET =====
+const ROLES_TICKETS = {
+    ck: ["1495581819167309886"], // Tickets Cks/PKTs
+    apelacion: ["1495581737017802843"], // Tickets Baneos
+    postulaciones: ["1495196578246557889"],
+    reportes: ["1495196578246557889"],
+    soporte: ["1495196578246557889"],
+    donaciones: ["1495581556117475369"]
+};
+
 // ===== UTILS =====
 function limpiarNombre(texto) {
     return texto
@@ -246,16 +256,39 @@ async function crearTicket(interaction, tipo, extra = "") {
 
     const categoria = CATEGORIAS[tipo];
 
+    const permisos = [
+        {
+            id: interaction.guild.id,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+            id: user.id,
+            allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages
+            ]
+        }
+    ];
+
+    const rolesPermitidos = ROLES_TICKETS[tipo] || [];
+
+    for (const rolId of rolesPermitidos) {
+        permisos.push({
+            id: rolId,
+            allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ManageChannels
+            ]
+        });
+    }
+
     const canal = await interaction.guild.channels.create({
         name: `${tipo}-${limpiarNombre(user.username)}`,
         type: ChannelType.GuildText,
         parent: categoria.parentId,
         topic: `ticketOwner:${user.id} | ticketCategory:${tipo}`,
-        permissionOverwrites: [
-            { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-            { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-            { id: ROL_STAFF, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels] }
-        ]
+        permissionOverwrites: permisos
     });
 
     const embed = new EmbedBuilder()
@@ -275,7 +308,7 @@ async function crearTicket(interaction, tipo, extra = "") {
     });
 
     await canal.send({
-        content: `<@${user.id}> <@&${ROL_STAFF}>`,
+        content: `<@${user.id}>`,
         embeds: [embed],
         components: [buildTicketButtons()]
     });
@@ -551,7 +584,7 @@ client.on("interactionCreate", async (interaction) => {
                         .setThumbnail(IMAGEN_LOGO);
 
                     await mensajeConEmbed.edit({
-                        content: ownerId ? `<@${ownerId}> <@&${ROL_STAFF}>` : `<@&${ROL_STAFF}>`,
+                        content: ownerId ? `<@${ownerId}>` : ``,
                         embeds: [nuevoEmbed],
                         components: [buildTicketButtons()]
                     });
