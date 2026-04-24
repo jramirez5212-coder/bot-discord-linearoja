@@ -16,7 +16,14 @@
 }
 
 {
-  "dependencies": {
-    "discord.js": "^14.26.3"
-  }
+"name": "linearoja-bot",
+"version": "1.0.0",
+"description": "Bot de tickets LineaRojaRp",
+"main": "bot.js",
+"scripts": {
+"start": "node bot.js"
+},
+"dependencies": {
+"discord.js": "^14.14.1"
+}
 }
