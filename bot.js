@@ -5,7 +5,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
   PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
@@ -23,13 +22,8 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = '1188377448346288158';
 
-if (!TOKEN) {
-  throw new Error('Falta TOKEN en Railway');
-}
-
-if (!CLIENT_ID) {
-  throw new Error('Falta CLIENT_ID en Railway');
-}
+if (!TOKEN) throw new Error('Falta TOKEN en Railway');
+if (!CLIENT_ID) throw new Error('Falta CLIENT_ID en Railway');
 
 const config = {
   guildName: 'LINEA ROJA',
@@ -38,10 +32,12 @@ const config = {
   jefeDelictivoRoleId: '1497857251128508427',
   subjefeDelictivoRoleId: '1497857296259354655',
 
-  orgsCategoryId: '1497856967757009016',
   createOrgChannelId: '1497855498362556446',
   databaseChannelId: '1497855438832533586',
   logsChannelId: '1497859320531124234',
+
+  solicitarRangoChannelId: '1497857200847065231',
+  listaChannelId: '1497859602979492082',
 
   logoUrl: 'https://cdn.discordapp.com/attachments/1495196888562012191/1497833637448650903/logoLNR-sinfondo.png?ex=69eef5c7&is=69eda447&hm=19c61107ebe4300a21236db3fd46dce6352f93c18911a1aa766b240d04037823&'
 };
@@ -50,7 +46,9 @@ const ORGS_FILE = path.join(__dirname, 'organizaciones.json');
 const DB_MESSAGE_FILE = path.join(__dirname, 'org_db_message.json');
 
 function ensureFile(file, fallback) {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(fallback, null, 2), 'utf8');
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, JSON.stringify(fallback, null, 2), 'utf8');
+  }
 }
 
 function readJson(file, fallback) {
@@ -79,7 +77,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent
   ],
   partials: [Partials.Channel]
@@ -96,6 +93,12 @@ function sanitizeName(name) {
     .slice(0, 40);
 }
 
+function cleanRoleName(name) {
+  const clean = name.trim();
+  if (clean.startsWith('🔫 ~')) return clean;
+  return `🔫 ~ ${clean}`;
+}
+
 function hasRole(member, roleId) {
   return member?.roles?.cache?.has(roleId);
 }
@@ -105,23 +108,34 @@ function isEncargado(member) {
 }
 
 function isOrgBoss(member, org) {
-  return member.id === org.jefeId || hasRole(member, config.encargadoDelictivoRoleId);
+  return member.id === org.jefeId || isEncargado(member);
 }
 
 function isOrgManager(member, org) {
   return (
     member.id === org.jefeId ||
     org.subjefes.includes(member.id) ||
-    hasRole(member, config.encargadoDelictivoRoleId)
+    isEncargado(member)
   );
 }
 
-async function logOrg(guild, text, embed = null) {
+function mustBeInChannel(interaction, channelId, channelName) {
+  if (interaction.channelId !== channelId) {
+    interaction.reply({
+      content: `Este comando solo se puede usar en <#${channelId}>.`,
+      ephemeral: true
+    });
+    return false;
+  }
+  return true;
+}
+
+async function logOrg(guild, content, embed = null) {
   const channel = await guild.channels.fetch(config.logsChannelId).catch(() => null);
   if (!channel?.isTextBased()) return;
 
   await channel.send({
-    content: text || null,
+    content: content || null,
     embeds: embed ? [embed] : []
   });
 }
@@ -139,7 +153,10 @@ function buildCreateOrgPanel() {
         '• Nombre del rol',
         '• Color del rol en HEX',
         '• Slots máximos',
-        '• ID del jefe'
+        '• ID del jefe',
+        '',
+        'El rol se creará automáticamente con el formato:',
+        '`🔫 ~ Nombre`'
       ].join('\n')
     )
     .setThumbnail(config.logoUrl);
@@ -168,6 +185,7 @@ function buildCreateOrgModal() {
   const rol = new TextInputBuilder()
     .setCustomId('org_rol')
     .setLabel('Nombre del rol')
+    .setPlaceholder('Ej: TMA')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
@@ -203,8 +221,8 @@ function buildCreateOrgModal() {
   return modal;
 }
 
-function buildOrgListEmbed(org, guild) {
-  const memberMentions = org.miembros.length
+function buildOrgListEmbed(org) {
+  const miembros = org.miembros.length
     ? org.miembros.map((id, index) => `${index + 1}. <@${id}>`).join('\n')
     : 'No hay miembros registrados.';
 
@@ -217,74 +235,31 @@ function buildOrgListEmbed(org, guild) {
     .setTitle(`Lista de ${org.nombre}`)
     .setDescription(
       [
+        `**Rol:** <@&${org.roleId}>`,
         `**Jefe:** <@${org.jefeId}>`,
-        `**Subjefes:**`,
+        '',
+        '**Subjefes:**',
         subjefes,
         '',
         `**Miembros:** ${org.miembros.length}/${org.slots}`,
-        memberMentions
+        miembros
       ].join('\n')
     )
     .setThumbnail(config.logoUrl)
     .setFooter({ text: `${config.guildName} • Organizaciones` });
 }
 
-function buildRequestPanel(org) {
-  const embed = new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle(`Solicitar ingreso a ${org.nombre}`)
-    .setDescription(
-      [
-        'Presiona el botón para solicitar ingreso a esta organización.',
-        '',
-        'Tu solicitud será enviada por privado al jefe y subjefes.'
-      ].join('\n')
-    )
-    .setThumbnail(config.logoUrl);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`org_request_${org.key}`)
-      .setLabel('Solicitar ingreso')
-      .setStyle(ButtonStyle.Success)
-  );
-
-  return { embeds: [embed], components: [row] };
-}
-
-async function updateOrgList(guild, org) {
-  const channel = await guild.channels.fetch(org.listaChannelId).catch(() => null);
-  if (!channel?.isTextBased()) return;
-
-  const embed = buildOrgListEmbed(org, guild);
-
-  if (org.listaMessageId) {
-    const msg = await channel.messages.fetch(org.listaMessageId).catch(() => null);
-    if (msg) {
-      await msg.edit({ embeds: [embed] });
-      return;
-    }
-  }
-
-  const msg = await channel.send({ embeds: [embed] });
-  const orgs = readOrgs();
-  orgs[org.key].listaMessageId = msg.id;
-  writeOrgs(orgs);
-}
-
 function buildDatabaseEmbed() {
-  const orgs = readOrgs();
-  const list = Object.values(orgs);
+  const orgs = Object.values(readOrgs());
 
-  const description = list.length
-    ? list.map(org => {
+  const description = orgs.length
+    ? orgs.map(org => {
         return [
           `**${org.nombre}**`,
           `Rol: <@&${org.roleId}>`,
           `Jefe: <@${org.jefeId}>`,
-          `Slots: ${org.miembros.length}/${org.slots}`,
-          `Lista: <#${org.listaChannelId}>`,
-          `Solicitar: <#${org.solicitarChannelId}>`
+          `Subjefes: ${org.subjefes.length}`,
+          `Slots: ${org.miembros.length}/${org.slots}`
         ].join('\n');
       }).join('\n\n')
     : 'No hay organizaciones registradas.';
@@ -320,18 +295,18 @@ async function updateDatabaseChannel() {
 }
 
 async function createOrgFromModal(interaction) {
-  const guild = interaction.guild;
-  const member = interaction.member;
-
-  if (!isEncargado(member)) {
+  if (!isEncargado(interaction.member)) {
     return interaction.reply({
       content: 'No tienes permiso para crear organizaciones.',
       ephemeral: true
     });
   }
 
+  const guild = interaction.guild;
+
   const nombre = interaction.fields.getTextInputValue('org_nombre').trim();
-  const roleName = interaction.fields.getTextInputValue('org_rol').trim();
+  const roleNameRaw = interaction.fields.getTextInputValue('org_rol').trim();
+  const roleName = cleanRoleName(roleNameRaw);
   const color = interaction.fields.getTextInputValue('org_color').trim();
   const slotsRaw = interaction.fields.getTextInputValue('org_slots').trim();
   const jefeId = interaction.fields.getTextInputValue('org_jefe').trim();
@@ -340,28 +315,47 @@ async function createOrgFromModal(interaction) {
   const slots = Number(slotsRaw);
 
   if (!key) {
-    return interaction.reply({ content: 'El nombre de la organización no es válido.', ephemeral: true });
+    return interaction.reply({
+      content: 'El nombre de la organización no es válido.',
+      ephemeral: true
+    });
   }
 
   if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
-    return interaction.reply({ content: 'El color debe ser HEX. Ejemplo: #ff0000', ephemeral: true });
+    return interaction.reply({
+      content: 'El color debe ser HEX. Ejemplo: #ff0000',
+      ephemeral: true
+    });
   }
 
   if (!Number.isInteger(slots) || slots <= 0) {
-    return interaction.reply({ content: 'Los slots deben ser un número válido.', ephemeral: true });
+    return interaction.reply({
+      content: 'Los slots deben ser un número válido.',
+      ephemeral: true
+    });
   }
 
   const jefeMember = await guild.members.fetch(jefeId).catch(() => null);
   if (!jefeMember) {
-    return interaction.reply({ content: 'No encontré al jefe con ese ID.', ephemeral: true });
+    return interaction.reply({
+      content: 'No encontré al jefe con ese ID.',
+      ephemeral: true
+    });
   }
 
   const orgs = readOrgs();
+
   if (orgs[key]) {
-    return interaction.reply({ content: 'Ya existe una organización con ese nombre.', ephemeral: true });
+    return interaction.reply({
+      content: 'Ya existe una organización con ese nombre.',
+      ephemeral: true
+    });
   }
 
-  await interaction.reply({ content: 'Creando organización...', ephemeral: true });
+  await interaction.reply({
+    content: 'Creando organización...',
+    ephemeral: true
+  });
 
   const role = await guild.roles.create({
     name: roleName,
@@ -371,32 +365,6 @@ async function createOrgFromModal(interaction) {
 
   await jefeMember.roles.add(role.id).catch(() => null);
   await jefeMember.roles.add(config.jefeDelictivoRoleId).catch(() => null);
-
-  const listaChannel = await guild.channels.create({
-    name: `${key}-lista`,
-    type: ChannelType.GuildText,
-    parent: config.orgsCategoryId,
-    permissionOverwrites: [
-      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
-      { id: config.encargadoDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
-      { id: config.jefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: config.subjefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-    ]
-  });
-
-  const solicitarChannel = await guild.channels.create({
-    name: `${key}-solicitar-rango`,
-    type: ChannelType.GuildText,
-    parent: config.orgsCategoryId,
-    permissionOverwrites: [
-      { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: config.encargadoDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
-      { id: config.jefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: config.subjefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-    ]
-  });
 
   const org = {
     key,
@@ -408,19 +376,12 @@ async function createOrgFromModal(interaction) {
     jefeId,
     subjefes: [],
     miembros: [jefeId],
-    listaChannelId: listaChannel.id,
-    solicitarChannelId: solicitarChannel.id,
-    listaMessageId: null,
     createdBy: interaction.user.id,
     createdAt: Date.now()
   };
 
   orgs[key] = org;
   writeOrgs(orgs);
-
-  await updateOrgList(guild, org);
-
-  await solicitarChannel.send(buildRequestPanel(org));
 
   await updateDatabaseChannel();
 
@@ -441,110 +402,99 @@ async function createOrgFromModal(interaction) {
   );
 
   return interaction.editReply({
-    content: `Organización **${nombre}** creada correctamente.`
+    content: `Organización **${nombre}** creada correctamente con el rol <@&${role.id}>.`
   });
 }
 
-async function sendRequestToManagers(interaction, org) {
-  const guild = interaction.guild;
-  const applicant = interaction.user;
+async function addMemberToOrg(interaction, org, user) {
+  const orgs = readOrgs();
 
-  if (org.miembros.includes(applicant.id)) {
+  if (org.miembros.includes(user.id)) {
     return interaction.reply({
-      content: 'Ya perteneces a esta organización.',
+      content: 'Ese usuario ya pertenece a esta organización.',
       ephemeral: true
     });
   }
 
-  const jefe = await client.users.fetch(org.jefeId).catch(() => null);
+  if (org.miembros.length >= org.slots) {
+    return interaction.reply({
+      content: 'La organización no tiene slots disponibles.',
+      ephemeral: true
+    });
+  }
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`org_accept_${org.key}_${applicant.id}`)
-      .setLabel('Aceptar')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`org_reject_${org.key}_${applicant.id}`)
-      .setLabel('Rechazar')
-      .setStyle(ButtonStyle.Danger)
+  const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+  if (!target) {
+    return interaction.reply({
+      content: 'No encontré al usuario en el servidor.',
+      ephemeral: true
+    });
+  }
+
+  await target.roles.add(org.roleId).catch(() => null);
+
+  org.miembros.push(user.id);
+  orgs[org.key] = org;
+  writeOrgs(orgs);
+
+  await updateDatabaseChannel();
+
+  await logOrg(
+    interaction.guild,
+    `<@${interaction.user.id}> agregó a <@${user.id}> a **${org.nombre}**.`
   );
 
-  const embed = new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle(`Solicitud de ingreso - ${org.nombre}`)
-    .setDescription(`${applicant} quiere ingresar a **${org.nombre}**.`)
-    .setThumbnail(config.logoUrl);
-
-  if (jefe) {
-    await jefe.send({ embeds: [embed], components: [row] }).catch(() => null);
-  }
-
-  for (const subjefeId of org.subjefes) {
-    const subjefe = await client.users.fetch(subjefeId).catch(() => null);
-    if (subjefe) {
-      await subjefe.send({ embeds: [embed], components: [row] }).catch(() => null);
-    }
-  }
-
-  await logOrg(guild, `${applicant} solicitó ingreso a **${org.nombre}**.`);
-
   return interaction.reply({
-    content: 'Tu solicitud fue enviada al jefe y subjefes de la organización.',
+    content: `${user} fue agregado a **${org.nombre}**.`,
     ephemeral: true
   });
 }
 
-async function handleOrgDecision(interaction, decision, orgKey, userId) {
-  const guild = client.guilds.cache.get(GUILD_ID);
-  if (!guild) return interaction.reply({ content: 'No encontré el servidor.', ephemeral: true });
-
+async function removeMemberFromOrg(interaction, org, user) {
   const orgs = readOrgs();
-  const org = orgs[orgKey];
 
-  if (!org) {
-    return interaction.reply({ content: 'La organización ya no existe.', ephemeral: true });
+  if (!org.miembros.includes(user.id)) {
+    return interaction.reply({
+      content: 'Ese usuario no pertenece a esta organización.',
+      ephemeral: true
+    });
   }
 
-  const managerMember = await guild.members.fetch(interaction.user.id).catch(() => null);
-  if (!managerMember || !isOrgManager(managerMember, org)) {
-    return interaction.reply({ content: 'No tienes permiso para responder esta solicitud.', ephemeral: true });
+  if (user.id === org.jefeId && !isEncargado(interaction.member)) {
+    return interaction.reply({
+      content: 'Solo un encargado delictivo puede remover al jefe.',
+      ephemeral: true
+    });
   }
 
-  const targetMember = await guild.members.fetch(userId).catch(() => null);
-  const targetUser = await client.users.fetch(userId).catch(() => null);
+  org.miembros = org.miembros.filter(id => id !== user.id);
+  org.subjefes = org.subjefes.filter(id => id !== user.id);
 
-  if (!targetMember) {
-    return interaction.reply({ content: 'No encontré al usuario en el servidor.', ephemeral: true });
+  const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+  if (target) {
+    await target.roles.remove(org.roleId).catch(() => null);
+    await target.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
   }
 
-  if (decision === 'reject') {
-    await targetUser?.send(`Tu solicitud para entrar a **${org.nombre}** fue rechazada.`).catch(() => null);
-    await logOrg(guild, `<@${interaction.user.id}> rechazó la solicitud de <@${userId}> para **${org.nombre}**.`);
-    return interaction.reply({ content: 'Solicitud rechazada.', ephemeral: true });
-  }
-
-  if (org.miembros.includes(userId)) {
-    return interaction.reply({ content: 'Ese usuario ya pertenece a la organización.', ephemeral: true });
-  }
-
-  if (org.miembros.length >= org.slots) {
-    return interaction.reply({ content: 'La organización ya no tiene slots disponibles.', ephemeral: true });
-  }
-
-  await targetMember.roles.add(org.roleId).catch(() => null);
-
-  org.miembros.push(userId);
-  orgs[orgKey] = org;
+  orgs[org.key] = org;
   writeOrgs(orgs);
 
-  await updateOrgList(guild, org);
   await updateDatabaseChannel();
 
-  await targetUser?.send(`Tu solicitud para entrar a **${org.nombre}** fue aceptada.`).catch(() => null);
+  await logOrg(
+    interaction.guild,
+    `<@${interaction.user.id}> removió a <@${user.id}> de **${org.nombre}**.`
+  );
 
-  await logOrg(guild, `<@${interaction.user.id}> aceptó a <@${userId}> en **${org.nombre}**.`);
+  return interaction.reply({
+    content: `${user} fue removido de **${org.nombre}**.`,
+    ephemeral: true
+  });
+}
 
-  return interaction.reply({ content: 'Solicitud aceptada correctamente.', ephemeral: true });
+function getOrgByName(name) {
+  const key = sanitizeName(name);
+  return readOrgs()[key] || null;
 }
 
 const commands = [
@@ -562,34 +512,90 @@ const commands = [
   new SlashCommandBuilder()
     .setName('orginfo')
     .setDescription('Ver información de una organización')
-    .addStringOption(opt => opt.setName('nombre').setDescription('Nombre de la organización').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('nombre')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
     .toJSON(),
 
   new SlashCommandBuilder()
-    .setName('setsubjefe')
-    .setDescription('Asignar subjefe a una organización')
-    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
-    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .setName('listamiembros')
+    .setDescription('Ver lista de miembros de una organización')
+    .addStringOption(opt =>
+      opt.setName('org')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
     .toJSON(),
 
   new SlashCommandBuilder()
-    .setName('removesubjefe')
-    .setDescription('Quitar subjefe de una organización')
-    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
-    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .setName('addmiembro')
+    .setDescription('Agregar miembro a una organización')
+    .addStringOption(opt =>
+      opt.setName('org')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
+    .addUserOption(opt =>
+      opt.setName('usuario')
+        .setDescription('Usuario')
+        .setRequired(true)
+    )
     .toJSON(),
 
   new SlashCommandBuilder()
     .setName('removemiembro')
     .setDescription('Quitar miembro de una organización')
-    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
-    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('org')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
+    .addUserOption(opt =>
+      opt.setName('usuario')
+        .setDescription('Usuario')
+        .setRequired(true)
+    )
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('setsubjefe')
+    .setDescription('Asignar subjefe a una organización')
+    .addStringOption(opt =>
+      opt.setName('org')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
+    .addUserOption(opt =>
+      opt.setName('usuario')
+        .setDescription('Usuario')
+        .setRequired(true)
+    )
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('removesubjefe')
+    .setDescription('Quitar subjefe de una organización')
+    .addStringOption(opt =>
+      opt.setName('org')
+        .setDescription('Nombre de la organización')
+        .setRequired(true)
+    )
+    .addUserOption(opt =>
+      opt.setName('usuario')
+        .setDescription('Usuario')
+        .setRequired(true)
+    )
     .toJSON()
 ];
 
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(TOKEN);
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
   console.log('Comandos registrados correctamente.');
 }
 
@@ -606,20 +612,27 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'setuporgs') {
         const channel = await interaction.guild.channels.fetch(config.createOrgChannelId).catch(() => null);
+
         if (!channel?.isTextBased()) {
-          return interaction.reply({ content: 'No encontré el canal de crear organizaciones.', ephemeral: true });
+          return interaction.reply({
+            content: 'No encontré el canal de crear organizaciones.',
+            ephemeral: true
+          });
         }
 
         await channel.send(buildCreateOrgPanel());
-        return interaction.reply({ content: 'Panel de organizaciones enviado.', ephemeral: true });
+
+        return interaction.reply({
+          content: 'Panel de organizaciones enviado.',
+          ephemeral: true
+        });
       }
 
       if (interaction.commandName === 'listaorgs') {
-        const orgs = readOrgs();
-        const list = Object.values(orgs);
+        const orgs = Object.values(readOrgs());
 
-        const description = list.length
-          ? list.map(org => `**${org.nombre}** — <@${org.jefeId}> — ${org.miembros.length}/${org.slots}`).join('\n')
+        const description = orgs.length
+          ? orgs.map(org => `**${org.nombre}** — <@${org.jefeId}> — ${org.miembros.length}/${org.slots}`).join('\n')
           : 'No hay organizaciones registradas.';
 
         return interaction.reply({
@@ -635,134 +648,200 @@ client.on('interactionCreate', async interaction => {
       }
 
       if (interaction.commandName === 'orginfo') {
-        const key = sanitizeName(interaction.options.getString('nombre'));
-        const org = readOrgs()[key];
+        const org = getOrgByName(interaction.options.getString('nombre'));
 
-        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
 
         return interaction.reply({
-          embeds: [buildOrgListEmbed(org, interaction.guild)],
+          embeds: [buildOrgListEmbed(org)],
           ephemeral: true
         });
       }
 
-      if (interaction.commandName === 'setsubjefe') {
-        const key = sanitizeName(interaction.options.getString('org'));
-        const user = interaction.options.getUser('usuario');
-        const orgs = readOrgs();
-        const org = orgs[key];
+      if (interaction.commandName === 'listamiembros') {
+        if (!mustBeInChannel(interaction, config.listaChannelId, 'lista')) return;
 
-        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+        const org = getOrgByName(interaction.options.getString('org'));
 
-        const member = await interaction.guild.members.fetch(interaction.user.id);
-        if (!isOrgBoss(member, org)) return interaction.reply({ content: 'Solo el jefe o encargado delictivo puede poner subjefes.', ephemeral: true });
-
-        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!target) return interaction.reply({ content: 'No encontré al usuario.', ephemeral: true });
-
-        if (!target.roles.cache.has(org.roleId)) {
-          return interaction.reply({ content: 'Ese usuario primero debe tener el rol de miembro de la organización.', ephemeral: true });
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
         }
 
-        if (!org.subjefes.includes(user.id)) org.subjefes.push(user.id);
+        if (!isOrgManager(interaction.member, org)) {
+          return interaction.reply({
+            content: 'Solo jefe, subjefe o encargado puede ver la lista.',
+            ephemeral: true
+          });
+        }
 
-        await target.roles.add(config.subjefeDelictivoRoleId).catch(() => null);
-
-        orgs[key] = org;
-        writeOrgs(orgs);
-
-        await updateOrgList(interaction.guild, org);
-        await updateDatabaseChannel();
-
-        await logOrg(interaction.guild, `<@${interaction.user.id}> puso como subjefe a <@${user.id}> en **${org.nombre}**.`);
-
-        return interaction.reply({ content: `${user} ahora es subjefe de **${org.nombre}**.`, ephemeral: true });
+        return interaction.reply({
+          embeds: [buildOrgListEmbed(org)]
+        });
       }
 
-      if (interaction.commandName === 'removesubjefe') {
-        const key = sanitizeName(interaction.options.getString('org'));
+      if (interaction.commandName === 'addmiembro') {
+        if (!mustBeInChannel(interaction, config.solicitarRangoChannelId, 'solicitar rango')) return;
+
+        const org = getOrgByName(interaction.options.getString('org'));
         const user = interaction.options.getUser('usuario');
-        const orgs = readOrgs();
-        const org = orgs[key];
 
-        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
 
-        const member = await interaction.guild.members.fetch(interaction.user.id);
-        if (!isOrgBoss(member, org)) return interaction.reply({ content: 'Solo el jefe o encargado delictivo puede quitar subjefes.', ephemeral: true });
+        if (!isOrgManager(interaction.member, org)) {
+          return interaction.reply({
+            content: 'Solo jefe, subjefe o encargado puede agregar miembros.',
+            ephemeral: true
+          });
+        }
 
-        org.subjefes = org.subjefes.filter(id => id !== user.id);
-
-        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (target) await target.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
-
-        orgs[key] = org;
-        writeOrgs(orgs);
-
-        await updateOrgList(interaction.guild, org);
-        await updateDatabaseChannel();
-
-        await logOrg(interaction.guild, `<@${interaction.user.id}> quitó como subjefe a <@${user.id}> en **${org.nombre}**.`);
-
-        return interaction.reply({ content: `${user} ya no es subjefe de **${org.nombre}**.`, ephemeral: true });
+        return addMemberToOrg(interaction, org, user);
       }
 
       if (interaction.commandName === 'removemiembro') {
-        const key = sanitizeName(interaction.options.getString('org'));
+        if (!mustBeInChannel(interaction, config.solicitarRangoChannelId, 'solicitar rango')) return;
+
+        const org = getOrgByName(interaction.options.getString('org'));
         const user = interaction.options.getUser('usuario');
+
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
+
+        if (!isOrgManager(interaction.member, org)) {
+          return interaction.reply({
+            content: 'Solo jefe, subjefe o encargado puede quitar miembros.',
+            ephemeral: true
+          });
+        }
+
+        return removeMemberFromOrg(interaction, org, user);
+      }
+
+      if (interaction.commandName === 'setsubjefe') {
+        if (!mustBeInChannel(interaction, config.solicitarRangoChannelId, 'solicitar rango')) return;
+
+        const org = getOrgByName(interaction.options.getString('org'));
+        const user = interaction.options.getUser('usuario');
+
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
+
+        if (!isOrgBoss(interaction.member, org)) {
+          return interaction.reply({
+            content: 'Solo jefe o encargado delictivo puede poner subjefes.',
+            ephemeral: true
+          });
+        }
+
+        if (!org.miembros.includes(user.id)) {
+          return interaction.reply({
+            content: 'Ese usuario primero debe ser miembro de la organización.',
+            ephemeral: true
+          });
+        }
+
         const orgs = readOrgs();
-        const org = orgs[key];
 
-        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+        if (!org.subjefes.includes(user.id)) {
+          org.subjefes.push(user.id);
+        }
 
-        const member = await interaction.guild.members.fetch(interaction.user.id);
-        if (!isOrgManager(member, org)) return interaction.reply({ content: 'No tienes permiso para quitar miembros de esta organización.', ephemeral: true });
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (target) {
+          await target.roles.add(config.subjefeDelictivoRoleId).catch(() => null);
+        }
 
-        org.miembros = org.miembros.filter(id => id !== user.id);
+        orgs[org.key] = org;
+        writeOrgs(orgs);
+
+        await updateDatabaseChannel();
+
+        await logOrg(
+          interaction.guild,
+          `<@${interaction.user.id}> puso como subjefe a <@${user.id}> en **${org.nombre}**.`
+        );
+
+        return interaction.reply({
+          content: `${user} ahora es subjefe de **${org.nombre}**.`,
+          ephemeral: true
+        });
+      }
+
+      if (interaction.commandName === 'removesubjefe') {
+        if (!mustBeInChannel(interaction, config.solicitarRangoChannelId, 'solicitar rango')) return;
+
+        const org = getOrgByName(interaction.options.getString('org'));
+        const user = interaction.options.getUser('usuario');
+
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
+
+        if (!isOrgBoss(interaction.member, org)) {
+          return interaction.reply({
+            content: 'Solo jefe o encargado delictivo puede quitar subjefes.',
+            ephemeral: true
+          });
+        }
+
+        const orgs = readOrgs();
         org.subjefes = org.subjefes.filter(id => id !== user.id);
 
         const target = await interaction.guild.members.fetch(user.id).catch(() => null);
         if (target) {
-          await target.roles.remove(org.roleId).catch(() => null);
           await target.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
         }
 
-        orgs[key] = org;
+        orgs[org.key] = org;
         writeOrgs(orgs);
 
-        await updateOrgList(interaction.guild, org);
         await updateDatabaseChannel();
 
-        await logOrg(interaction.guild, `<@${interaction.user.id}> removió a <@${user.id}> de **${org.nombre}**.`);
+        await logOrg(
+          interaction.guild,
+          `<@${interaction.user.id}> quitó como subjefe a <@${user.id}> en **${org.nombre}**.`
+        );
 
-        return interaction.reply({ content: `${user} fue removido de **${org.nombre}**.`, ephemeral: true });
+        return interaction.reply({
+          content: `${user} ya no es subjefe de **${org.nombre}**.`,
+          ephemeral: true
+        });
       }
     }
 
     if (interaction.isButton()) {
       if (interaction.customId === 'org_open_create') {
         if (!isEncargado(interaction.member)) {
-          return interaction.reply({ content: 'No tienes permiso para crear organizaciones.', ephemeral: true });
+          return interaction.reply({
+            content: 'No tienes permiso para crear organizaciones.',
+            ephemeral: true
+          });
         }
 
         return interaction.showModal(buildCreateOrgModal());
-      }
-
-      if (interaction.customId.startsWith('org_request_')) {
-        const key = interaction.customId.replace('org_request_', '');
-        const org = readOrgs()[key];
-
-        if (!org) return interaction.reply({ content: 'Esta organización ya no existe.', ephemeral: true });
-
-        return sendRequestToManagers(interaction, org);
-      }
-
-      if (interaction.customId.startsWith('org_accept_') || interaction.customId.startsWith('org_reject_')) {
-        const parts = interaction.customId.split('_');
-        const decision = parts[1];
-        const orgKey = parts[2];
-        const userId = parts[3];
-
-        return handleOrgDecision(interaction, decision, orgKey, userId);
       }
     }
 
