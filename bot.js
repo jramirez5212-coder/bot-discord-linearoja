@@ -1,654 +1,778 @@
-console.log("YA CONECTADO");
-// ===== IMPORTS =====
 const {
-    Client,
-    GatewayIntentBits,
-    PermissionsBitField,
-    ChannelType,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    StringSelectMenuBuilder,
-    EmbedBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-    AttachmentBuilder
-} = require("discord.js");
+  Client,
+  GatewayIntentBits,
+  Partials,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  EmbedBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} = require('discord.js');
 
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
-// ===== CLIENT =====
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
-});
-
-// ===== CONFIG =====
 const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID || 'PON_AQUI_CLIENT_ID_BOT_ORGS';
+const GUILD_ID = '1188377448346288158';
 
-const CANAL_BIENVENIDA_ID = "1495196891124600853";
-const CANAL_TICKETS_PANEL = "1495196994329645149";
-const CANAL_PANEL_EMBEDS = "1495196970032304128";
-const ROL_STAFF = "1495196578246557889";
+const config = {
+  guildName: 'LINEA ROJA',
 
-const IMAGEN_BANNER = "https://cdn.discordapp.com/attachments/1495196888562012191/1495554719353933934/banner_nombre_logo.png";
-const IMAGEN_LOGO = "https://cdn.discordapp.com/attachments/1495196888562012191/1495554787712696463/LINEAROJA_LOGO.png";
+  encargadoDelictivoRoleId: '1495196576946327653',
+  jefeDelictivoRoleId: '1497857251128508427',
+  subjefeDelictivoRoleId: '1497857296259354655',
 
-// ===== CATEGORIAS =====
-const CATEGORIAS = {
-    soporte: { nombre: "Soporte", parentId: "1495580733274587237" },
-    donaciones: { nombre: "Donaciones", parentId: "1495582260957679770" },
-    postulaciones: { nombre: "Postulaciones", parentId: "1495582414984970261" },
-    reportes: { nombre: "Reportes", parentId: "1495582547046957197" },
-    bugs: { nombre: "Reportar Bugs", parentId: "1495582547046957197" },
-    apelacion: { nombre: "Apelar Ban", parentId: "1495582620740751400" },
-    ck: { nombre: "Solicitar CK / PKT", parentId: "1495582706359074938" }
+  orgsCategoryId: '1497856967757009016',
+  createOrgChannelId: '1497855498362556446',
+  databaseChannelId: '1497855438832533586',
+  logsChannelId: '1497859320531124234',
+
+  logoUrl: 'https://cdn.discordapp.com/attachments/1495196888562012191/1497833637448650903/logoLNR-sinfondo.png?ex=69eef5c7&is=69eda447&hm=19c61107ebe4300a21236db3fd46dce6352f93c18911a1aa766b240d04037823&'
 };
 
-// ===== ROLES POR TICKET =====
-const ROLES_TICKETS = {
-    ck: ["1495581819167309886"],
-    apelacion: ["1495581737017802843"],
-    postulaciones: ["1495196578246557889"],
-    reportes: ["1495196578246557889"],
-    soporte: ["1495196578246557889"],
-    donaciones: ["1495581556117475369"]
-};
+const ORGS_FILE = path.join(__dirname, 'organizaciones.json');
+const DB_MESSAGE_FILE = path.join(__dirname, 'org_db_message.json');
 
-// ===== UTILS =====
-function limpiarNombre(texto) {
-    return texto
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9-_]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 30);
+function ensureFile(file, fallback) {
+  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(fallback, null, 2), 'utf8');
 }
 
-async function contarTicketsUsuario(guild, userId) {
-    return guild.channels.cache.filter(
-        c => c.topic && c.topic.includes(`ticketOwner:${userId}`)
-    );
+function readJson(file, fallback) {
+  ensureFile(file, fallback);
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
 }
 
-function buildTicketButtons() {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId("cerrar")
-            .setLabel("Cerrar")
-            .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-            .setCustomId("transcript")
-            .setLabel("Transcript")
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId("claim")
-            .setLabel("Asumir ticket")
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId("renombrar")
-            .setLabel("Renombrar canal")
-            .setStyle(ButtonStyle.Primary)
-    );
+function writeJson(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// ===== PANEL CREADOR DE EMBEDS =====
-function buildEmbedCreatorPanel() {
-    const embed = new EmbedBuilder()
-        .setTitle("Creador de embeds • LineaRojaRp")
-        .setDescription("Pulsa el botón de abajo para crear un embed personalizado desde Discord.")
-        .setColor("#ff0000")
-        .setThumbnail(IMAGEN_LOGO);
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId("abrir_creador_embed")
-            .setLabel("Crear embed")
-            .setStyle(ButtonStyle.Primary)
-    );
-
-    return { embed, row };
+function readOrgs() {
+  return readJson(ORGS_FILE, {});
 }
 
-// ===== READY =====
-client.on("clientReady", () => {
-    console.log(`Encendido como: ${client.user.tag}`);
+function writeOrgs(data) {
+  writeJson(ORGS_FILE, data);
+}
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Channel]
 });
 
-// ===== BIENVENIDA (ESTILO BONITO) =====
-client.on("guildMemberAdd", async (member) => {
-    try {
-        const canal = member.guild.channels.cache.get(CANAL_BIENVENIDA_ID);
-        if (!canal) return;
+function sanitizeName(name) {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+}
 
-        const embed = new EmbedBuilder()
-            .setAuthor({
-                name: "LineaRojaRp",
-                iconURL: IMAGEN_LOGO
-            })
-            .setTitle("¡Bienvenido!")
-            .setDescription(`Hola ${member}\nBienvenido a **LineaRojaRp 🔴**`)
-            .setColor("#ff0000")
-            .setThumbnail(IMAGEN_LOGO)
-            .setImage(IMAGEN_BANNER);
+function hasRole(member, roleId) {
+  return member?.roles?.cache?.has(roleId);
+}
 
-        await canal.send({ embeds: [embed] });
-    } catch (error) {
-        console.log("Error en bienvenida:", error);
+function isEncargado(member) {
+  return hasRole(member, config.encargadoDelictivoRoleId);
+}
+
+function isOrgBoss(member, org) {
+  return member.id === org.jefeId || hasRole(member, config.encargadoDelictivoRoleId);
+}
+
+function isOrgManager(member, org) {
+  return (
+    member.id === org.jefeId ||
+    org.subjefes.includes(member.id) ||
+    hasRole(member, config.encargadoDelictivoRoleId)
+  );
+}
+
+async function logOrg(guild, text, embed = null) {
+  const channel = await guild.channels.fetch(config.logsChannelId).catch(() => null);
+  if (!channel?.isTextBased()) return;
+
+  await channel.send({
+    content: text || null,
+    embeds: embed ? [embed] : []
+  });
+}
+
+function buildCreateOrgPanel() {
+  const embed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle('Sistema de Organizaciones')
+    .setDescription(
+      [
+        'Presiona el botón de abajo para crear una nueva organización.',
+        '',
+        '**Información requerida:**',
+        '• Nombre de la organización',
+        '• Nombre del rol',
+        '• Color del rol en HEX',
+        '• Slots máximos',
+        '• ID del jefe'
+      ].join('\n')
+    )
+    .setThumbnail(config.logoUrl);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('org_open_create')
+      .setLabel('Crear organización')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+function buildCreateOrgModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_create_org')
+    .setTitle('Crear organización');
+
+  const nombre = new TextInputBuilder()
+    .setCustomId('org_nombre')
+    .setLabel('Nombre de la organización')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const rol = new TextInputBuilder()
+    .setCustomId('org_rol')
+    .setLabel('Nombre del rol')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const color = new TextInputBuilder()
+    .setCustomId('org_color')
+    .setLabel('Color HEX del rol')
+    .setPlaceholder('#ff0000')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const slots = new TextInputBuilder()
+    .setCustomId('org_slots')
+    .setLabel('Slots máximos')
+    .setPlaceholder('Ej: 12')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const jefe = new TextInputBuilder()
+    .setCustomId('org_jefe')
+    .setLabel('ID del jefe')
+    .setPlaceholder('Ej: 123456789012345678')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(nombre),
+    new ActionRowBuilder().addComponents(rol),
+    new ActionRowBuilder().addComponents(color),
+    new ActionRowBuilder().addComponents(slots),
+    new ActionRowBuilder().addComponents(jefe)
+  );
+
+  return modal;
+}
+
+function buildOrgListEmbed(org, guild) {
+  const memberMentions = org.miembros.length
+    ? org.miembros.map((id, index) => `${index + 1}. <@${id}>`).join('\n')
+    : 'No hay miembros registrados.';
+
+  const subjefes = org.subjefes.length
+    ? org.subjefes.map(id => `<@${id}>`).join('\n')
+    : 'No hay subjefes.';
+
+  return new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle(`Lista de ${org.nombre}`)
+    .setDescription(
+      [
+        `**Jefe:** <@${org.jefeId}>`,
+        `**Subjefes:**`,
+        subjefes,
+        '',
+        `**Miembros:** ${org.miembros.length}/${org.slots}`,
+        memberMentions
+      ].join('\n')
+    )
+    .setThumbnail(config.logoUrl)
+    .setFooter({ text: `${config.guildName} • Organizaciones` });
+}
+
+function buildRequestPanel(org) {
+  const embed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle(`Solicitar ingreso a ${org.nombre}`)
+    .setDescription(
+      [
+        'Presiona el botón para solicitar ingreso a esta organización.',
+        '',
+        'Tu solicitud será enviada por privado al jefe y subjefes.'
+      ].join('\n')
+    )
+    .setThumbnail(config.logoUrl);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`org_request_${org.key}`)
+      .setLabel('Solicitar ingreso')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+async function updateOrgList(guild, org) {
+  const channel = await guild.channels.fetch(org.listaChannelId).catch(() => null);
+  if (!channel?.isTextBased()) return;
+
+  const embed = buildOrgListEmbed(org, guild);
+
+  if (org.listaMessageId) {
+    const msg = await channel.messages.fetch(org.listaMessageId).catch(() => null);
+    if (msg) {
+      await msg.edit({ embeds: [embed] });
+      return;
     }
-});
+  }
 
-// ===== PANEL =====
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+  const msg = await channel.send({ embeds: [embed] });
+  const orgs = readOrgs();
+  orgs[org.key].listaMessageId = msg.id;
+  writeOrgs(orgs);
+}
 
-    if (message.content === "!tickets") {
-        const canal = message.guild.channels.cache.get(CANAL_TICKETS_PANEL);
-        if (!canal) return;
+function buildDatabaseEmbed() {
+  const orgs = readOrgs();
+  const list = Object.values(orgs);
 
-        const embed = new EmbedBuilder()
-            .setTitle("Tickets LineaRojaRp")
-            .setDescription("Bienvenido al sistema de tickets LineaRojaRp pulsa el botón de abajo para crear un ticket.")
-            .setColor("#ff0000")
-            .setThumbnail("https://media.discordapp.net/attachments/1495196888562012191/1495554787712696463/LINEAROJA_LOGO.png")
-            .setImage("https://media.discordapp.net/attachments/1495196888562012191/1495554719353933934/banner_nombre_logo.png");
+  const description = list.length
+    ? list.map(org => {
+        return [
+          `**${org.nombre}**`,
+          `Rol: <@&${org.roleId}>`,
+          `Jefe: <@${org.jefeId}>`,
+          `Slots: ${org.miembros.length}/${org.slots}`,
+          `Lista: <#${org.listaChannelId}>`,
+          `Solicitar: <#${org.solicitarChannelId}>`
+        ].join('\n');
+      }).join('\n\n')
+    : 'No hay organizaciones registradas.';
 
-        const menu = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId("menu")
-                .setPlaceholder("Selecciona una categoría")
-                .addOptions([
-                    {
-                        label: "Soporte",
-                        description: "Si solicitas soporte presiona aquí.",
-                        value: "soporte",
-                        emoji: { id: "1194861655264338062", name: "alarta" }
-                    },
-                    {
-                        label: "Donaciones",
-                        description: "Si deseas donar al servidor presiona aca.",
-                        value: "donaciones",
-                        emoji: { id: "1192599916787277845", name: "chack" }
-                    },
-                    {
-                        label: "Postulaciones",
-                        description: "Si deseas postular a alguna facción o a staff presiona acá.",
-                        value: "postulaciones",
-                        emoji: { id: "1192599900475637851", name: "chack" }
-                    },
-                    {
-                        label: "Reportes",
-                        description: "Si deseas reportar presiona acá.",
-                        value: "reportes",
-                        emoji: { id: "1192599857635016855", name: "chack" }
-                    },
-                    {
-                        label: "Reportar Bugs",
-                        description: "Si viste algún bug en el servidor presiona acá.",
-                        value: "bugs",
-                        emoji: { id: "1192599887427162182", name: "chack" }
-                    },
-                    {
-                        label: "Apelar Ban",
-                        description: "Si quieres apelar tu ban presiona acá.",
-                        value: "apelacion",
-                        emoji: { id: "1192599873095209168", name: "chack" }
-                    },
-                    {
-                        label: "Solicitar CKs o PKTs",
-                        description: "Si quieres solicitar un CK o PKT presiona acá.",
-                        value: "ck",
-                        emoji: { id: "1192599928892051656", name: "chack" }
-                    }
-                ])
-        );
+  return new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle('Base de Datos de Organizaciones')
+    .setDescription(description)
+    .setThumbnail(config.logoUrl)
+    .setFooter({ text: 'Actualización automática' });
+}
 
-        await canal.send({ embeds: [embed], components: [menu] });
+async function updateDatabaseChannel() {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+
+  const channel = await guild.channels.fetch(config.databaseChannelId).catch(() => null);
+  if (!channel?.isTextBased()) return;
+
+  const data = readJson(DB_MESSAGE_FILE, {});
+  const embed = buildDatabaseEmbed();
+
+  if (data.messageId) {
+    const msg = await channel.messages.fetch(data.messageId).catch(() => null);
+    if (msg) {
+      await msg.edit({ embeds: [embed] });
+      return;
     }
+  }
 
-    if (message.content === "!panelembed") {
-        if (!message.member.roles.cache.has(ROL_STAFF)) {
-            return message.reply("No tienes permiso.");
-        }
+  const msg = await channel.send({ embeds: [embed] });
+  writeJson(DB_MESSAGE_FILE, { messageId: msg.id });
+}
 
-        const canal = message.guild.channels.cache.get(CANAL_PANEL_EMBEDS);
-        if (!canal) return message.reply("No encontré el canal.");
+async function createOrgFromModal(interaction) {
+  const guild = interaction.guild;
+  const member = interaction.member;
 
-        const { embed, row } = buildEmbedCreatorPanel();
-
-        await canal.send({
-            embeds: [embed],
-            components: [row]
-        });
-
-        await message.reply("Panel de embeds enviado.");
-    }
-});
-
-// ===== CREAR TICKET =====
-async function crearTicket(interaction, tipo, extra = "") {
-    const user = interaction.user;
-
-    const tickets = await contarTicketsUsuario(interaction.guild, user.id);
-
-    if (tickets.size >= 2) {
-        return interaction.reply({
-            content: "Ya tienes el máximo de 2 tickets abiertos.",
-            ephemeral: true
-        });
-    }
-
-    const existeCategoria = tickets.find(c => c.name.startsWith(tipo));
-
-    if (existeCategoria) {
-        return interaction.reply({
-            content: "Ya tienes un ticket abierto en esta categoría.",
-            ephemeral: true
-        });
-    }
-
-    const categoria = CATEGORIAS[tipo];
-
-    const permisos = [
-        {
-            id: interaction.guild.id,
-            deny: [
-                PermissionsBitField.Flags.ViewChannel
-            ]
-        },
-        {
-            id: user.id,
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.AttachFiles,
-                PermissionsBitField.Flags.EmbedLinks
-            ]
-        }
-    ];
-
-    const rolesPermitidos = ROLES_TICKETS[tipo] || [];
-
-    for (const rolId of rolesPermitidos) {
-        permisos.push({
-            id: rolId,
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.ManageChannels,
-                PermissionsBitField.Flags.AttachFiles,
-                PermissionsBitField.Flags.EmbedLinks
-            ]
-        });
-    }
-
-    const canal = await interaction.guild.channels.create({
-        name: `${tipo}-${limpiarNombre(user.username)}`,
-        type: ChannelType.GuildText,
-        parent: categoria.parentId,
-        topic: `ticketOwner:${user.id} | ticketCategory:${tipo}`,
-        permissionOverwrites: permisos
-    });
-
-    await canal.permissionOverwrites.set(permisos);
-
-    const embed = new EmbedBuilder()
-        .setAuthor({ name: "LineaRojaRp", iconURL: IMAGEN_LOGO })
-        .setDescription(`Bienvenido a los tickets **LineaRojaRp**. Los miembros del staff te atenderán lo más rápido posible.${extra ? `\n\n${extra}` : ""}`)
-        .addFields(
-            { name: "Usuario", value: `${user}`, inline: false },
-            { name: "Categoría", value: categoria.nombre, inline: false },
-            { name: "Staff", value: "`Nadie ha asumido el ticket`", inline: false },
-            { name: "Estado del ticket", value: "`El ticket está actualmente abierto`", inline: false }
-        )
-        .setColor("#ff0000")
-        .setThumbnail(IMAGEN_LOGO);
-
-    await canal.send({
-        content: `${user} tu TICKET fue creado con éxito en el canal ${canal}`
-    });
-
-    await canal.send({
-        content: `<@${user.id}>`,
-        embeds: [embed],
-        components: [buildTicketButtons()]
-    });
-
+  if (!isEncargado(member)) {
     return interaction.reply({
-        content: `Ticket creado: ${canal}`,
-        ephemeral: true
+      content: 'No tienes permiso para crear organizaciones.',
+      ephemeral: true
     });
+  }
+
+  const nombre = interaction.fields.getTextInputValue('org_nombre').trim();
+  const roleName = interaction.fields.getTextInputValue('org_rol').trim();
+  const color = interaction.fields.getTextInputValue('org_color').trim();
+  const slotsRaw = interaction.fields.getTextInputValue('org_slots').trim();
+  const jefeId = interaction.fields.getTextInputValue('org_jefe').trim();
+
+  const key = sanitizeName(nombre);
+  const slots = Number(slotsRaw);
+
+  if (!key) {
+    return interaction.reply({ content: 'El nombre de la organización no es válido.', ephemeral: true });
+  }
+
+  if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+    return interaction.reply({ content: 'El color debe ser HEX. Ejemplo: #ff0000', ephemeral: true });
+  }
+
+  if (!Number.isInteger(slots) || slots <= 0) {
+    return interaction.reply({ content: 'Los slots deben ser un número válido.', ephemeral: true });
+  }
+
+  const jefeMember = await guild.members.fetch(jefeId).catch(() => null);
+  if (!jefeMember) {
+    return interaction.reply({ content: 'No encontré al jefe con ese ID.', ephemeral: true });
+  }
+
+  const orgs = readOrgs();
+  if (orgs[key]) {
+    return interaction.reply({ content: 'Ya existe una organización con ese nombre.', ephemeral: true });
+  }
+
+  await interaction.reply({ content: 'Creando organización...', ephemeral: true });
+
+  const role = await guild.roles.create({
+    name: roleName,
+    color,
+    reason: `Organización creada por ${interaction.user.tag}`
+  });
+
+  await jefeMember.roles.add(role.id).catch(() => null);
+  await jefeMember.roles.add(config.jefeDelictivoRoleId).catch(() => null);
+
+  const listaChannel = await guild.channels.create({
+    name: `${key}-lista`,
+    type: ChannelType.GuildText,
+    parent: config.orgsCategoryId,
+    permissionOverwrites: [
+      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
+      { id: config.encargadoDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
+      { id: config.jefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: config.subjefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
+    ]
+  });
+
+  const solicitarChannel = await guild.channels.create({
+    name: `${key}-solicitar-rango`,
+    type: ChannelType.GuildText,
+    parent: config.orgsCategoryId,
+    permissionOverwrites: [
+      { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: config.encargadoDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
+      { id: config.jefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: config.subjefeDelictivoRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
+    ]
+  });
+
+  const org = {
+    key,
+    nombre,
+    roleName,
+    roleId: role.id,
+    color,
+    slots,
+    jefeId,
+    subjefes: [],
+    miembros: [jefeId],
+    listaChannelId: listaChannel.id,
+    solicitarChannelId: solicitarChannel.id,
+    listaMessageId: null,
+    createdBy: interaction.user.id,
+    createdAt: Date.now()
+  };
+
+  orgs[key] = org;
+  writeOrgs(orgs);
+
+  await updateOrgList(guild, org);
+
+  await solicitarChannel.send(buildRequestPanel(org));
+
+  await updateDatabaseChannel();
+
+  await logOrg(
+    guild,
+    null,
+    new EmbedBuilder()
+      .setColor(0xff0000)
+      .setTitle('Organización creada')
+      .addFields(
+        { name: 'Organización', value: org.nombre, inline: true },
+        { name: 'Rol', value: `<@&${org.roleId}>`, inline: true },
+        { name: 'Jefe', value: `<@${org.jefeId}>`, inline: true },
+        { name: 'Slots', value: `${org.slots}`, inline: true },
+        { name: 'Creada por', value: `<@${interaction.user.id}>`, inline: true }
+      )
+      .setThumbnail(config.logoUrl)
+  );
+
+  return interaction.editReply({
+    content: `Organización **${nombre}** creada correctamente.`
+  });
 }
 
-async function generarTranscript(channel) {
-    const messages = await channel.messages.fetch({ limit: 100 });
-    const ordenados = Array.from(messages.values()).reverse();
+async function sendRequestToManagers(interaction, org) {
+  const guild = interaction.guild;
+  const applicant = interaction.user;
 
-    let contenido = `Transcript de ${channel.name}\n\n`;
+  if (org.miembros.includes(applicant.id)) {
+    return interaction.reply({
+      content: 'Ya perteneces a esta organización.',
+      ephemeral: true
+    });
+  }
 
-    for (const msg of ordenados) {
-        const fecha = new Date(msg.createdTimestamp).toLocaleString("es-CO");
-        contenido += `[${fecha}] ${msg.author.tag}: ${msg.content || "(sin texto)"}\n`;
+  const jefe = await client.users.fetch(org.jefeId).catch(() => null);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`org_accept_${org.key}_${applicant.id}`)
+      .setLabel('Aceptar')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`org_reject_${org.key}_${applicant.id}`)
+      .setLabel('Rechazar')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  const embed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle(`Solicitud de ingreso - ${org.nombre}`)
+    .setDescription(`${applicant} quiere ingresar a **${org.nombre}**.`)
+    .setThumbnail(config.logoUrl);
+
+  if (jefe) {
+    await jefe.send({ embeds: [embed], components: [row] }).catch(() => null);
+  }
+
+  for (const subjefeId of org.subjefes) {
+    const subjefe = await client.users.fetch(subjefeId).catch(() => null);
+    if (subjefe) {
+      await subjefe.send({ embeds: [embed], components: [row] }).catch(() => null);
     }
+  }
 
-    const ruta = path.join(__dirname, `transcript-${channel.id}.txt`);
-    fs.writeFileSync(ruta, contenido, "utf8");
-    return ruta;
+  await logOrg(guild, `${applicant} solicitó ingreso a **${org.nombre}**.`);
+
+  return interaction.reply({
+    content: 'Tu solicitud fue enviada al jefe y subjefes de la organización.',
+    ephemeral: true
+  });
 }
 
-// ===== INTERACCIONES =====
-client.on("interactionCreate", async (interaction) => {
-    try {
-        // =========================
-        // MENU DE TICKETS
-        // =========================
-        if (interaction.isStringSelectMenu() && interaction.customId === "menu") {
-            const valor = interaction.values[0];
+async function handleOrgDecision(interaction, decision, orgKey, userId) {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return interaction.reply({ content: 'No encontré el servidor.', ephemeral: true });
 
-            if (valor === "reportes") {
-                const modal = new ModalBuilder()
-                    .setCustomId("modal_reportes")
-                    .setTitle("Reportar");
+  const orgs = readOrgs();
+  const org = orgs[orgKey];
 
-                const idReportado = new TextInputBuilder()
-                    .setCustomId("id_reportado")
-                    .setLabel("Id persona reportada IC")
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder("Id | Null")
-                    .setRequired(true);
+  if (!org) {
+    return interaction.reply({ content: 'La organización ya no existe.', ephemeral: true });
+  }
 
-                const pruebas = new TextInputBuilder()
-                    .setCustomId("pruebas")
-                    .setLabel("¿Tienes pruebas de lo sucedido?")
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder("Si | No")
-                    .setRequired(true);
+  const managerMember = await guild.members.fetch(interaction.user.id).catch(() => null);
+  if (!managerMember || !isOrgManager(managerMember, org)) {
+    return interaction.reply({ content: 'No tienes permiso para responder esta solicitud.', ephemeral: true });
+  }
 
-                const razon = new TextInputBuilder()
-                    .setCustomId("razon")
-                    .setLabel("Pon la razón por la que estás reportando")
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setPlaceholder("Razón")
-                    .setRequired(true);
+  const targetMember = await guild.members.fetch(userId).catch(() => null);
+  const targetUser = await client.users.fetch(userId).catch(() => null);
 
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(idReportado),
-                    new ActionRowBuilder().addComponents(pruebas),
-                    new ActionRowBuilder().addComponents(razon)
-                );
+  if (!targetMember) {
+    return interaction.reply({ content: 'No encontré al usuario en el servidor.', ephemeral: true });
+  }
 
-                return interaction.showModal(modal);
-            }
+  if (decision === 'reject') {
+    await targetUser?.send(`Tu solicitud para entrar a **${org.nombre}** fue rechazada.`).catch(() => null);
+    await logOrg(guild, `<@${interaction.user.id}> rechazó la solicitud de <@${userId}> para **${org.nombre}**.`);
+    return interaction.reply({ content: 'Solicitud rechazada.', ephemeral: true });
+  }
 
-            return crearTicket(interaction, valor);
+  if (org.miembros.includes(userId)) {
+    return interaction.reply({ content: 'Ese usuario ya pertenece a la organización.', ephemeral: true });
+  }
+
+  if (org.miembros.length >= org.slots) {
+    return interaction.reply({ content: 'La organización ya no tiene slots disponibles.', ephemeral: true });
+  }
+
+  await targetMember.roles.add(org.roleId).catch(() => null);
+
+  org.miembros.push(userId);
+  orgs[orgKey] = org;
+  writeOrgs(orgs);
+
+  await updateOrgList(guild, org);
+  await updateDatabaseChannel();
+
+  await targetUser?.send(`Tu solicitud para entrar a **${org.nombre}** fue aceptada.`).catch(() => null);
+
+  await logOrg(guild, `<@${interaction.user.id}> aceptó a <@${userId}> en **${org.nombre}**.`);
+
+  return interaction.reply({ content: 'Solicitud aceptada correctamente.', ephemeral: true });
+}
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName('setuporgs')
+    .setDescription('Enviar panel de creación de organizaciones')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('listaorgs')
+    .setDescription('Ver organizaciones registradas')
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('orginfo')
+    .setDescription('Ver información de una organización')
+    .addStringOption(opt => opt.setName('nombre').setDescription('Nombre de la organización').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('setsubjefe')
+    .setDescription('Asignar subjefe a una organización')
+    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('removesubjefe')
+    .setDescription('Quitar subjefe de una organización')
+    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('removemiembro')
+    .setDescription('Quitar miembro de una organización')
+    .addStringOption(opt => opt.setName('org').setDescription('Nombre de la organización').setRequired(true))
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+    .toJSON()
+];
+
+async function registerCommands() {
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+  console.log('Comandos registrados correctamente.');
+}
+
+client.once('clientReady', async () => {
+  console.log(`Bot organizaciones conectado como ${client.user.tag}`);
+  ensureFile(ORGS_FILE, {});
+  ensureFile(DB_MESSAGE_FILE, {});
+  await registerCommands();
+  await updateDatabaseChannel();
+});
+
+client.on('interactionCreate', async interaction => {
+  try {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'setuporgs') {
+        const channel = await interaction.guild.channels.fetch(config.createOrgChannelId).catch(() => null);
+        if (!channel?.isTextBased()) {
+          return interaction.reply({ content: 'No encontré el canal de crear organizaciones.', ephemeral: true });
         }
 
-        // =========================
-        // MODAL REPORTES
-        // =========================
-        if (interaction.isModalSubmit() && interaction.customId === "modal_reportes") {
-            const idReportado = interaction.fields.getTextInputValue("id_reportado");
-            const pruebas = interaction.fields.getTextInputValue("pruebas");
-            const razon = interaction.fields.getTextInputValue("razon");
+        await channel.send(buildCreateOrgPanel());
+        return interaction.reply({ content: 'Panel de organizaciones enviado.', ephemeral: true });
+      }
 
-            const extra = [
-                "**Formulario enviado**",
-                `**Id persona reportada IC:** ${idReportado}`,
-                `**¿Tienes pruebas?:** ${pruebas}`,
-                `**Razón:** ${razon}`
-            ].join("\n");
+      if (interaction.commandName === 'listaorgs') {
+        const orgs = readOrgs();
+        const list = Object.values(orgs);
 
-            return crearTicket(interaction, "reportes", extra);
+        const description = list.length
+          ? list.map(org => `**${org.nombre}** — <@${org.jefeId}> — ${org.miembros.length}/${org.slots}`).join('\n')
+          : 'No hay organizaciones registradas.';
+
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xff0000)
+              .setTitle('Organizaciones registradas')
+              .setDescription(description)
+              .setThumbnail(config.logoUrl)
+          ],
+          ephemeral: true
+        });
+      }
+
+      if (interaction.commandName === 'orginfo') {
+        const key = sanitizeName(interaction.options.getString('nombre'));
+        const org = readOrgs()[key];
+
+        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+
+        return interaction.reply({
+          embeds: [buildOrgListEmbed(org, interaction.guild)],
+          ephemeral: true
+        });
+      }
+
+      if (interaction.commandName === 'setsubjefe') {
+        const key = sanitizeName(interaction.options.getString('org'));
+        const user = interaction.options.getUser('usuario');
+        const orgs = readOrgs();
+        const org = orgs[key];
+
+        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        if (!isOrgBoss(member, org)) return interaction.reply({ content: 'Solo el jefe o encargado delictivo puede poner subjefes.', ephemeral: true });
+
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!target) return interaction.reply({ content: 'No encontré al usuario.', ephemeral: true });
+
+        if (!target.roles.cache.has(org.roleId)) {
+          return interaction.reply({ content: 'Ese usuario primero debe tener el rol de miembro de la organización.', ephemeral: true });
         }
 
-        // =========================
-        // MODAL RENOMBRAR
-        // =========================
-        if (interaction.isModalSubmit() && interaction.customId === "modal_renombrar") {
-            const nuevoNombre = limpiarNombre(
-                interaction.fields.getTextInputValue("nuevo_nombre")
-            );
+        if (!org.subjefes.includes(user.id)) org.subjefes.push(user.id);
 
-            await interaction.channel.setName(nuevoNombre);
+        await target.roles.add(config.subjefeDelictivoRoleId).catch(() => null);
 
-            return interaction.reply({
-                content: `Canal renombrado a **${nuevoNombre}**.`,
-                ephemeral: true
-            });
+        orgs[key] = org;
+        writeOrgs(orgs);
+
+        await updateOrgList(interaction.guild, org);
+        await updateDatabaseChannel();
+
+        await logOrg(interaction.guild, `<@${interaction.user.id}> puso como subjefe a <@${user.id}> en **${org.nombre}**.`);
+
+        return interaction.reply({ content: `${user} ahora es subjefe de **${org.nombre}**.`, ephemeral: true });
+      }
+
+      if (interaction.commandName === 'removesubjefe') {
+        const key = sanitizeName(interaction.options.getString('org'));
+        const user = interaction.options.getUser('usuario');
+        const orgs = readOrgs();
+        const org = orgs[key];
+
+        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        if (!isOrgBoss(member, org)) return interaction.reply({ content: 'Solo el jefe o encargado delictivo puede quitar subjefes.', ephemeral: true });
+
+        org.subjefes = org.subjefes.filter(id => id !== user.id);
+
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (target) await target.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
+
+        orgs[key] = org;
+        writeOrgs(orgs);
+
+        await updateOrgList(interaction.guild, org);
+        await updateDatabaseChannel();
+
+        await logOrg(interaction.guild, `<@${interaction.user.id}> quitó como subjefe a <@${user.id}> en **${org.nombre}**.`);
+
+        return interaction.reply({ content: `${user} ya no es subjefe de **${org.nombre}**.`, ephemeral: true });
+      }
+
+      if (interaction.commandName === 'removemiembro') {
+        const key = sanitizeName(interaction.options.getString('org'));
+        const user = interaction.options.getUser('usuario');
+        const orgs = readOrgs();
+        const org = orgs[key];
+
+        if (!org) return interaction.reply({ content: 'No encontré esa organización.', ephemeral: true });
+
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        if (!isOrgManager(member, org)) return interaction.reply({ content: 'No tienes permiso para quitar miembros de esta organización.', ephemeral: true });
+
+        org.miembros = org.miembros.filter(id => id !== user.id);
+        org.subjefes = org.subjefes.filter(id => id !== user.id);
+
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (target) {
+          await target.roles.remove(org.roleId).catch(() => null);
+          await target.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
         }
 
-        // =========================
-        // MODAL CREAR EMBED
-        // =========================
-        if (interaction.isModalSubmit() && interaction.customId === "modal_crear_embed") {
-            const titulo = interaction.fields.getTextInputValue("titulo");
-            const descripcion = interaction.fields.getTextInputValue("descripcion");
-            const imagen = interaction.fields.getTextInputValue("imagen");
-            const thumbnail = interaction.fields.getTextInputValue("thumbnail");
-            const color = interaction.fields.getTextInputValue("color") || "#ff0000";
+        orgs[key] = org;
+        writeOrgs(orgs);
 
-            const embed = new EmbedBuilder()
-                .setTitle(titulo)
-                .setDescription(descripcion)
-                .setColor(color);
+        await updateOrgList(interaction.guild, org);
+        await updateDatabaseChannel();
 
-            if (imagen) embed.setImage(imagen);
-            if (thumbnail) embed.setThumbnail(thumbnail);
+        await logOrg(interaction.guild, `<@${interaction.user.id}> removió a <@${user.id}> de **${org.nombre}**.`);
 
-            await interaction.channel.send({ embeds: [embed] });
-
-            return interaction.reply({
-                content: "Embed enviado correctamente.",
-                ephemeral: true
-            });
-        }
-
-        // ===== ABRIR CREADOR EMBED =====
-        if (interaction.isButton() && interaction.customId === "abrir_creador_embed") {
-            const modal = new ModalBuilder()
-                .setCustomId("modal_crear_embed")
-                .setTitle("Crear embed");
-
-            const titulo = new TextInputBuilder()
-                .setCustomId("titulo")
-                .setLabel("Título")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true);
-
-            const descripcion = new TextInputBuilder()
-                .setCustomId("descripcion")
-                .setLabel("Descripción")
-                .setStyle(TextInputStyle.Paragraph)
-                .setRequired(true);
-
-            const imagen = new TextInputBuilder()
-                .setCustomId("imagen")
-                .setLabel("Imagen (URL)")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(false);
-
-            const thumbnail = new TextInputBuilder()
-                .setCustomId("thumbnail")
-                .setLabel("Logo derecha (URL)")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(false);
-
-            const color = new TextInputBuilder()
-                .setCustomId("color")
-                .setLabel("Color HEX (#ff0000)")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(false);
-
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(titulo),
-                new ActionRowBuilder().addComponents(descripcion),
-                new ActionRowBuilder().addComponents(imagen),
-                new ActionRowBuilder().addComponents(thumbnail),
-                new ActionRowBuilder().addComponents(color)
-            );
-
-            return interaction.showModal(modal);
-        }
-
-        // =========================
-        // BOTONES
-        // =========================
-        if (interaction.isButton()) {
-
-            // ===== CERRAR =====
-            if (interaction.customId === "cerrar") {
-                await interaction.deferReply({ ephemeral: true });
-
-                const channel = interaction.channel;
-                const topic = channel.topic || "";
-                const ownerId = topic.match(/ticketOwner:(\d+)/)?.[1];
-
-                const ruta = await generarTranscript(channel);
-                const archivo = new AttachmentBuilder(ruta);
-
-                const embed = new EmbedBuilder()
-                    .setAuthor({ name: "LineaRojaRp 🔴", iconURL: IMAGEN_LOGO })
-                    .setTitle("Ticket Closed")
-                    .addFields(
-                        { name: "Canal", value: channel.name, inline: true },
-                        { name: "Usuario", value: ownerId ? `<@${ownerId}>` : "No encontrado", inline: true },
-                        { name: "Cerrado por", value: `${interaction.user}`, inline: true },
-                        { name: "Hora", value: new Date().toLocaleString(), inline: false }
-                    )
-                    .setColor("#ff0000");
-
-                if (ownerId) {
-                    try {
-                        const user = await client.users.fetch(ownerId);
-                        await user.send({
-                            embeds: [embed],
-                            files: [archivo]
-                        });
-                    } catch (e) {
-                        console.log("No se pudo enviar DM:", e);
-                    }
-                }
-
-                await interaction.editReply({ content: "Ticket cerrado." });
-
-                setTimeout(async () => {
-                    try {
-                        await channel.delete();
-                    } catch (e) {
-                        console.log("Error borrando canal:", e);
-                    }
-                }, 3000);
-
-                return;
-            }
-
-            // ===== TRANSCRIPT =====
-            if (interaction.customId === "transcript") {
-                await interaction.deferReply({ ephemeral: true });
-
-                const ruta = await generarTranscript(interaction.channel);
-                const archivo = new AttachmentBuilder(ruta);
-
-                await interaction.editReply({
-                    content: "Aquí está el transcript del ticket.",
-                    files: [archivo]
-                });
-
-                return;
-            }
-
-            // ===== CLAIM =====
-            if (interaction.customId === "claim") {
-                await interaction.deferReply({ ephemeral: true });
-
-                const mensajes = await interaction.channel.messages.fetch({ limit: 20 });
-                const mensajeConEmbed = mensajes.find(
-                    m => m.author.id === client.user.id && m.embeds.length > 0
-                );
-
-                if (mensajeConEmbed) {
-                    const topic = interaction.channel.topic || "";
-                    const ownerId = topic.match(/ticketOwner:(\d+)/)?.[1];
-                    const categoriaKey = topic.match(/ticketCategory:([a-z]+)/)?.[1] || "soporte";
-                    const categoriaTexto = CATEGORIAS[categoriaKey]?.nombre || "Ticket";
-
-                    const nuevoEmbed = new EmbedBuilder()
-                        .setAuthor({ name: "LineaRojaRp", iconURL: IMAGEN_LOGO })
-                        .setDescription("Bienvenido a los tickets **LineaRojaRp**. Los miembros del staff te atenderán lo más rápido posible.")
-                        .addFields(
-                            { name: "Usuario", value: ownerId ? `<@${ownerId}>` : `${interaction.user}`, inline: false },
-                            { name: "Categoría", value: categoriaTexto, inline: false },
-                            { name: "Staff", value: `\`${interaction.user.tag}\``, inline: false },
-                            { name: "Estado del ticket", value: "`El ticket está actualmente abierto`", inline: false }
-                        )
-                        .setColor("#ff0000")
-                        .setThumbnail(IMAGEN_LOGO);
-
-                    await mensajeConEmbed.edit({
-                        content: ownerId ? `<@${ownerId}>` : ``,
-                        embeds: [nuevoEmbed],
-                        components: [buildTicketButtons()]
-                    });
-                }
-
-                await interaction.editReply({
-                    content: `Ticket asumido por ${interaction.user}`
-                });
-
-                return;
-            }
-
-            // ===== RENOMBRAR =====
-            if (interaction.customId === "renombrar") {
-                const modal = new ModalBuilder()
-                    .setCustomId("modal_renombrar")
-                    .setTitle("Renombrar canal");
-
-                const nuevoNombre = new TextInputBuilder()
-                    .setCustomId("nuevo_nombre")
-                    .setLabel("Nuevo nombre del canal")
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder("ejemplo-reportes-jota")
-                    .setRequired(true);
-
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(nuevoNombre)
-                );
-
-                return interaction.showModal(modal);
-            }
-        }
-
-    } catch (error) {
-        console.log("Error en interacción:", error);
-
-        try {
-            if (interaction.isRepliable()) {
-                if (interaction.deferred) {
-                    await interaction.editReply({
-                        content: "Ocurrió un error al ejecutar esa acción."
-                    });
-                } else if (!interaction.replied) {
-                    await interaction.reply({
-                        content: "Ocurrió un error al ejecutar esa acción.",
-                        ephemeral: true
-                    });
-                }
-            }
-        } catch (e) {
-            console.log("Error respondiendo al error:", e);
-        }
+        return interaction.reply({ content: `${user} fue removido de **${org.nombre}**.`, ephemeral: true });
+      }
     }
+
+    if (interaction.isButton()) {
+      if (interaction.customId === 'org_open_create') {
+        if (!isEncargado(interaction.member)) {
+          return interaction.reply({ content: 'No tienes permiso para crear organizaciones.', ephemeral: true });
+        }
+
+        return interaction.showModal(buildCreateOrgModal());
+      }
+
+      if (interaction.customId.startsWith('org_request_')) {
+        const key = interaction.customId.replace('org_request_', '');
+        const org = readOrgs()[key];
+
+        if (!org) return interaction.reply({ content: 'Esta organización ya no existe.', ephemeral: true });
+
+        return sendRequestToManagers(interaction, org);
+      }
+
+      if (interaction.customId.startsWith('org_accept_') || interaction.customId.startsWith('org_reject_')) {
+        const parts = interaction.customId.split('_');
+        const decision = parts[1];
+        const orgKey = parts[2];
+        const userId = parts[3];
+
+        return handleOrgDecision(interaction, decision, orgKey, userId);
+      }
+    }
+
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'modal_create_org') {
+        return createOrgFromModal(interaction);
+      }
+    }
+  } catch (error) {
+    console.error('Error:', error);
+
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'Ocurrió un error al ejecutar esa acción.',
+        ephemeral: true
+      }).catch(() => null);
+    }
+  }
 });
 
 client.login(TOKEN);
