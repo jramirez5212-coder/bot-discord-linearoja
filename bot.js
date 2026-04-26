@@ -239,7 +239,7 @@ function buildCreateModal() {
 
 function buildListEmbed(org) {
   const miembros = org.miembros.length
-    ? org.miembros.map((id, i) => `${i + 1}. <@${id}>`).join('\n')
+    ? org.miembros.map(id => `<@${id}>`).join('\n')
     : 'Sin miembros registrados.';
 
   const subjefes = org.subjefes.length
@@ -313,6 +313,12 @@ const commands = [
     .setDescription('Quitar subjefe de una organización')
     .addStringOption(o => o.setName('org').setDescription('Nombre de la org').setRequired(true))
     .addUserOption(o => o.setName('usuario').setDescription('Usuario').setRequired(true))
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('eliminarorg')
+    .setDescription('Eliminar una organización')
+    .addStringOption(o => o.setName('org').setDescription('Nombre de la org').setRequired(true))
     .toJSON()
 ];
 
@@ -468,6 +474,75 @@ client.on('interactionCreate', async interaction => {
         await logAction(interaction.guild, `<@${interaction.user.id}> quitó a <@${user.id}> como subjefe de **${org.nombre}**.`);
 
         return interaction.reply({ content: `${user} ya no es subjefe de **${org.nombre}**.` });
+      }
+
+      if (interaction.commandName === 'eliminarorg') {
+        if (!isEncargado(interaction.member)) {
+          return interaction.reply({
+            content: 'Solo un encargado delictivo puede eliminar organizaciones.',
+            ephemeral: true
+          });
+        }
+
+        const orgName = interaction.options.getString('org');
+        const key = cleanKey(orgName);
+        const orgs = readOrgs();
+        const org = orgs[key];
+
+        if (!org) {
+          return interaction.reply({
+            content: 'No encontré esa organización.',
+            ephemeral: true
+          });
+        }
+
+        await interaction.reply({
+          content: `Eliminando organización **${org.nombre}**...`,
+          ephemeral: true
+        });
+
+        const role = await interaction.guild.roles.fetch(org.roleId).catch(() => null);
+
+        if (role) {
+          await role.delete(`Organización ${org.nombre} eliminada`).catch(() => null);
+        }
+
+        const jefeMember = await interaction.guild.members.fetch(org.jefeId).catch(() => null);
+
+        const jefeTieneOtraOrg = Object.values(orgs).some(o =>
+          o.key !== key && o.jefeId === org.jefeId
+        );
+
+        if (jefeMember && !jefeTieneOtraOrg) {
+          await jefeMember.roles.remove(config.jefeDelictivoRoleId).catch(() => null);
+        }
+
+        for (const subjefeId of org.subjefes) {
+          const subjefeTieneOtraOrg = Object.values(orgs).some(o =>
+            o.key !== key && o.subjefes.includes(subjefeId)
+          );
+
+          if (!subjefeTieneOtraOrg) {
+            const subjefeMember = await interaction.guild.members.fetch(subjefeId).catch(() => null);
+            if (subjefeMember) {
+              await subjefeMember.roles.remove(config.subjefeDelictivoRoleId).catch(() => null);
+            }
+          }
+        }
+
+        delete orgs[key];
+        writeOrgs(orgs);
+
+        await updateDatabase();
+
+        await logAction(
+          interaction.guild,
+          `<@${interaction.user.id}> eliminó la organización **${org.nombre}**.`
+        );
+
+        return interaction.editReply({
+          content: `Organización **${org.nombre}** eliminada correctamente.`
+        });
       }
     }
 
