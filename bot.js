@@ -20,8 +20,16 @@ const fs = require('fs');
 const path = require('path');
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID || '1495537889709391943';
+const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = '1188377448346288158';
+
+if (!TOKEN) {
+  throw new Error('Falta TOKEN en Railway');
+}
+
+if (!CLIENT_ID) {
+  throw new Error('Falta CLIENT_ID en Railway');
+}
 
 const config = {
   guildName: 'LINEA ROJA',
