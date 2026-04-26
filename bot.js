@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID || 'PON_AQUI_CLIENT_ID_BOT_ORGS';
+const CLIENT_ID = process.env.CLIENT_ID || '1495537889709391943';
 const GUILD_ID = '1188377448346288158';
 
 const config = {
