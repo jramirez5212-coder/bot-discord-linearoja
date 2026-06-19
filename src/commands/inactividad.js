@@ -2,9 +2,9 @@ const {
   EmbedBuilder, ModalBuilder, TextInputBuilder,
   TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle
 } = require("discord.js");
-const { ACTIVITY_ROLE_ID, CANAL_INACTIVIDAD_ID,
+const { ACTIVITY_ROLE_ID, CANAL_INACTIVIDAD_ID, CANAL_CMD_INACTIVO,
         BANNER_INACTIVIDAD, ROL_INACTIVO_ID,
-        CANAL_CMD_INACTIVO, GUILD_ID }             = require("../config");
+        GUILD_ID }             = require("../config");
 
 const excusasActivas = new Map();
 const cooldowns      = new Map();
@@ -123,7 +123,7 @@ async function handleInactividadModal(interaction, client) {
 
   // Embed en canal de inactividad
   try {
-    const canal = await client.channels.fetch(CANAL_INACTIVIDAD_ID);
+    const canal = await client.channels.fetch(CANAL_CMD_INACTIVO);
     if (canal) {
       const embed = new EmbedBuilder()
         .setColor(0x39ff3c).setTitle("📋 Justificación de Inactividad")

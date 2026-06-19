@@ -25,10 +25,20 @@ const { handleTorneo,
 const { handleAdmin,
         handleChiteadoButton }      = require("./src/commands/admin");
 const { handleNuevo,
-        handleNuevoButton }         = require("./src/commands/nuevo");
+        handleNuevoButton,
+        handleTutorialButton,
+        handleNuevoFotoSS,
+        handleSSResultButton }      = require("./src/commands/nuevo");
 const { handleTandas }             = require("./src/commands/tandas");
+const { handleInactividadDecision } = require("./src/commands/inactividadDecision");
+const { handleMigrarRoles }        = require("./src/commands/migrarRoles");
+const { handleComandosFijados, ensurePinnedCommands, COMANDOS_POR_CANAL } = require("./src/commands/comandosFijados");
+const { handleTriunfos, ensurePinnedTriunfos, CANAL_TRIUNFOS_ID, handleTopTriunfos, handleMisTriunfos } = require("./src/commands/triunfos");
+const { handleArmarioLogs, handleArmarioCommand, handleTopArmario, handleTopMetio, handleArmarioAlertaButton } = require("./src/commands/armario");
 const { startActividadTask }       = require("./src/tasks/actividadTask");
 const { startInactividadTask }     = require("./src/tasks/inactividadTask");
+const { startCalendarioTask, handleInscripcionButton, EVENTOS } = require("./src/tasks/calendarioTask");
+const { initPanelEventos, handlePanelButton, handleEmbedCreator } = require("./src/commands/panelEventos");
 
 global.isExcused = isExcused;
 
@@ -36,29 +46,51 @@ const TOKEN = process.env.TOKEN;
 if (!TOKEN) throw new Error("Falta TOKEN en el archivo .env");
 
 const COLOR      = 0x00ff3c;
-const SS_ROLE_ID = "1497410474881319102";
+const SS_ROLE_ID = "1516258951052791818";
+
+const GUILD_VIEJO_ID = "1455775938200473606";
+const GUILD_NUEVO_ID = "1188377448346288158";
 
 const config = {
   guildName: "EXLATAM / #300K?",
-  guildId: "1455775938200473606",
+  guildId: GUILD_NUEVO_ID,
+  welcomeChannelId: "1516259293878550589",
+  staffBandasRoleId: "1516258946715881592",
+  postulacionesPanelChannelId: "1516259307845451917",
+  postulacionesChannelId: "1516259309237964971",
+  categoriaAprobadosId: "1516259245979603034",
+  categoriaRechazadosId: "1516259249246703698",
+  botLogsChannelId: "1516259269341745243",
+  logoUrl: "https://cdn.discordapp.com/attachments/1442748638848876564/1516299423540449280/ChatGPT_Image_15_jun_2026__23_31_21.pngexxxxxxxxxxxx-removebg-preview.png?ex=6a322362&is=6a30d1e2&hm=ae749a81460b7b70e00e225ddc691f29a37304cf4a6787c419a0886a8b4ad8d6&",
+  bannerUrl: "https://cdn.discordapp.com/attachments/1495181084248510555/1496964414467866806/image.png?ex=6a31abc0&is=6a305a40&hm=2f8f3b93ee8f7f7dafadb0f2625c1e295590351ac181941100416f2639e13c97&"
+};
+
+// Configuración SOLO de bienvenida + tickets para el servidor VIEJO
+const configViejo = {
+  guildName: "EXLATAM",
+  guildId: GUILD_VIEJO_ID,
   welcomeChannelId: "1469434029475496209",
-  staffBandasRoleId: "1479568728340431100",
-  postulacionesPanelChannelId: "1503502893616070729",
-  postulacionesChannelId: "1503480237307203665",
-  categoriaAprobadosId: "1503482480169189607",
-  categoriaRechazadosId: "1503482612721782894",
-  botLogsChannelId: "1484299743440928768",
-  logoUrl: "https://cdn.discordapp.com/attachments/1495181084248510555/1496961392316780544/ex1-removebg-preview.png?ex=6a00e170&is=69ff8ff0&hm=50f5e8ba4101bb15b3d05c648a5ad13ef57f8408b2cfad94431a2effe219bab6&",
-  bannerUrl: "https://cdn.discordapp.com/attachments/1495181084248510555/1495181776614588426/bannerdc1.png?ex=6a00ff8a&is=69ffae0a&hm=f54d7a23160bfc30fdd22e438104f200f5e8cc1970985179fba540aae6af1904&"
+  ticketPanelChannelId: "1469434046638461231",
+  logoUrl: config.logoUrl,
+  bannerUrl: config.bannerUrl,
 };
 
 const questions = ["Nombre:","Residencia/País?:","Edad (**mínimo 15**):","5 Clips o 1HG:","Foto de las horas de FiveM:","Foto KD (**mínimo 1.8**):","Link Steam Público:","Tiempo Disponible?:"];
 
 const ticketTypes = {
-  reportes:  { label:"Reportes",  emoji:"⛔",  categoryId:"1469433997191811308", roleId:"1469433860293918921", description:"⚠️ **Cuéntanos en qué te podemos ayudar.**\n\n~ Usuario reportado:\n~ Motivo del reporte:\n~ Pruebas / clips:\n~ Explicación completa de lo sucedido:" },
-  compras:   { label:"Compras",   emoji:"<:emoji_24:1486354461558308944>", categoryId:"1469433995371483320", roleId:"1481851324395163759", description:"⚠️ **Mientras tanto dinos qué te gustaría comprar de la tienda:**\n\n~ Producto:\n~ Cantidad:\n~ Método de pago:\n~ ¿Está en stock?:" },
-  partners:  { label:"Partners",  emoji:"🤝", categoryId:"1469433998722732279", roleId:"1469433860293918921", description:"⚠️ **Solicitud de partner**\n\n~ Nombre del servidor:\n~ Invitación:\n~ Miembros:\n~ ¿Qué tipo de alianza quieres hacer?:\n~ ¿Qué puedes ofrecer como partner?:" }
+  reportes: { label:"Reportes", emoji:"⛔",  categoryId:"1516259251750834226", roleId:"1516258948871753902", description:"⚠️ **Cuéntanos en qué te podemos ayudar.**\n\n~ Usuario reportado:\n~ Motivo del reporte:\n~ Pruebas / clips:\n~ Explicación completa de lo sucedido:" },
+  compras:  { label:"Compras",  emoji:"<:emoji_24:1486354461558308944>", categoryId:"1516259250379161641", roleId:"1516258940411842751", description:"⚠️ **Mientras tanto dinos qué te gustaría comprar de la tienda:**\n\n~ Producto:\n~ Cantidad:\n~ Método de pago:\n~ ¿Está en stock?:" },
+  partners: { label:"Partners", emoji:"🤝", categoryId:"1516259252967051284", roleId:"1516258948871753902", description:"⚠️ **Solicitud de partner**\n\n~ Nombre del servidor:\n~ Invitación:\n~ Miembros:\n~ ¿Qué tipo de alianza quieres hacer?:\n~ ¿Qué puedes ofrecer como partner?:" }
 };
+
+// Tickets del servidor VIEJO — "Recompensa" en lugar de "Reportes"
+const ticketTypesViejo = {
+  recompensa: { label:"Recompensa", emoji:"🎁",  categoryId:"1469433997191811308", roleId:"1481851324395163759", description:"⚠️ **Cuéntanos qué recompensa quieres reclamar.**\n\n~ ¿Qué recompensa quieres reclamar?:\n~ ¿Cómo la obtuviste? (clips/pruebas):\n~ Usuario que la otorgó (si aplica):\n~ Explicación completa:" },
+  compras:    { label:"Compras",    emoji:"<:emoji_24:1486354461558308944>", categoryId:"1469433995371483320", roleId:"1481851324395163759", description:ticketTypes.compras.description },
+  partners:   { label:"Partners",   emoji:"🤝", categoryId:"1469433998722732279", roleId:"1469433860293918921", description:ticketTypes.partners.description }
+};
+
+const getTicketTypesFor = guildId => guildId === GUILD_VIEJO_ID ? ticketTypesViejo : ticketTypes;
 
 const appFile  = "./applications.json";
 const metaFile = "./rolas_meta.json";
@@ -80,7 +112,9 @@ const answerFromMessage = m => { const t=m.content?.trim()||""; const f=m.attach
 const isStaffMember    = m => m?.roles?.cache?.has(config.staffBandasRoleId) || m?.permissions?.has(PermissionFlagsBits.Administrator);
 const canStaff         = i => i.member?.roles?.cache?.has(config.staffBandasRoleId) || i.member?.permissions?.has(PermissionFlagsBits.Administrator);
 const getTicketTypeFromChannel = ch => ch?.topic?.match(/ticketType:([a-zA-Z0-9_-]+)/)?.[1] || null;
-const canManageThisTicket = i => { if (!i.member) return false; if (i.member.permissions.has(PermissionFlagsBits.Administrator)) return true; const t=ticketTypes[getTicketTypeFromChannel(i.channel)]; return t?i.member.roles.cache.has(t.roleId):false; };
+const canManageThisTicket = i => { if (!i.member) return false; if (i.member.permissions.has(PermissionFlagsBits.Administrator)) return true; const types=getTicketTypesFor(i.guild.id); const t=types[getTicketTypeFromChannel(i.channel)]; return t?i.member.roles.cache.has(t.roleId):false; };
+const ROL_VER_RENOMBRAR_TICKET_ID = "1516258952101363712"; // ve el ticket, puede renombrar y solicitar SS, NO puede cerrar
+const canRenombrarTicket = i => canManageThisTicket(i) || i.member?.roles?.cache?.has(ROL_VER_RENOMBRAR_TICKET_ID);
 const getTicketUserId  = ch => ch.topic?.match(/postulacionUser:(\d+)/)?.[1] || null;
 
 const buildRenameTicketModal = () => { const m=new ModalBuilder().setCustomId("modal_rename_ticket").setTitle("Renombrar ticket"); m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("new_name").setLabel("Nuevo nombre del canal").setPlaceholder("Ejemplo: reporte-juan").setStyle(TextInputStyle.Short).setRequired(true))); return m; };
@@ -130,10 +164,19 @@ const buildPanel = () => ({
   components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("start_postulacion").setLabel("Iniciar postulación").setEmoji("📝").setStyle(ButtonStyle.Success))]
 });
 
-const ticketPanel = () => ({
-  embeds:[new EmbedBuilder().setColor(COLOR).setTitle("<:emoji_16:1486354271351078923> SISTEMA TICKETS EXLATAM").setDescription("<:emoji_13:1485010590358568970>  *Si deseas abrir algun ticket lo puedes hacer presionando los botones de abajo:*\n\n```INFORMACION IMPORTANTE```\n<:emoji_6:1485010432514326558> __Postulaciones:__ Usa el panel de postulaciones para iniciar por DM.\n<:emoji_6:1485010432514326558> __Reportes:__ Reportar alguna inconformidad.\n<:emoji_6:1485010432514326558> __Compras:__ Compras en nuestra tienda.\n<:emoji_6:1485010432514326558> __Partners:__ Alianzas entre discord (PUBLICIDAD).\n\n👇 **SELECCIONA EL TICKET QUE NECESITAS** 👇").setThumbnail(config.logoUrl).setImage(config.bannerUrl).setFooter({text:"TICKETS"})],
-  components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("ticket_reportes").setLabel("Reportes").setEmoji("⛔").setStyle(ButtonStyle.Danger),new ButtonBuilder().setCustomId("ticket_compras").setLabel("Compras").setEmoji("🛍️").setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId("ticket_partners").setLabel("Partners").setEmoji("🤝").setStyle(ButtonStyle.Primary))]
-});
+const ticketPanel = (guildId) => {
+  const esViejo = guildId === GUILD_VIEJO_ID;
+  const label   = esViejo ? "Recompensa" : "Reportes";
+  const emoji   = esViejo ? "🎁" : "⛔";
+  const customId = esViejo ? "ticket_recompensa" : "ticket_reportes";
+  const lineaDesc = esViejo
+    ? "<:emoji_6:1485010432514326558> __Recompensa:__ Reclamar alguna recompensa."
+    : "<:emoji_6:1485010432514326558> __Reportes:__ Reportar alguna inconformidad.";
+  return {
+    embeds:[new EmbedBuilder().setColor(COLOR).setTitle("<:emoji_16:1486354271351078923> SISTEMA TICKETS EXLATAM").setDescription(`<:emoji_13:1485010590358568970>  *Si deseas abrir algun ticket lo puedes hacer presionando los botones de abajo:*\n\n\`\`\`INFORMACION IMPORTANTE\`\`\`\n${lineaDesc}\n<:emoji_6:1485010432514326558> __Compras:__ Compras en nuestra tienda.\n<:emoji_6:1485010432514326558> __Partners:__ Alianzas entre discord (PUBLICIDAD).\n\n👇 **SELECCIONA EL TICKET QUE NECESITAS** 👇`).setThumbnail(config.logoUrl).setImage(config.bannerUrl).setFooter({text:"TICKETS"})],
+    components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(customId).setLabel(label).setEmoji(emoji).setStyle(ButtonStyle.Danger),new ButtonBuilder().setCustomId("ticket_compras").setLabel("Compras").setEmoji("🛍️").setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId("ticket_partners").setLabel("Partners").setEmoji("🤝").setStyle(ButtonStyle.Primary))]
+  };
+};
 
 async function botLog(emoji,titulo,detalle="",origen="auto",ejecutadoPor=null){try{const ch=await client.channels.fetch(config.botLogsChannelId).catch(()=>null);if(!ch?.isTextBased())return;const embed=new EmbedBuilder().setColor(origen==="manual"?0xf0a500:COLOR).setAuthor({name:"EXLATAM Bot — Log",iconURL:config.logoUrl}).setTitle(`${emoji} ${titulo}`).addFields({name:"Origen",value:origen==="manual"?`🖐️ Manual${ejecutadoPor?` — ${ejecutadoPor}`:""}` :"🤖 Automático",inline:true},{name:"Hora",value:colombiaTime(),inline:true},{name:"Fecha",value:colombiaDate(),inline:true}).setFooter({text:config.guildName,iconURL:config.logoUrl}).setTimestamp();if(detalle)embed.setDescription(detalle);await ch.send({embeds:[embed]});}catch(e){console.log("⚠️ botLog:",e.message);}}
 
@@ -214,8 +257,7 @@ async function createResultTicket(userId, status, staffUser) {
       permissionOverwrites: [
         {id:guild.roles.everyone.id, deny:[PermissionFlagsBits.ViewChannel]},
         {id:userId, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},
-        {id:config.staffBandasRoleId, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.ManageChannels,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},
-        {id:"1469433858352222379", allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]}
+        {id:config.staffBandasRoleId, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.ManageChannels,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]}
       ]
     });
 
@@ -248,6 +290,8 @@ async function startFeedback(userId,status,staffId){const apps=loadApps();apps[u
 
 async function sendFeedbackToStaff(userId){const apps=loadApps();const app=apps[userId];if(!app?.feedback)return;const ch=await client.channels.fetch(config.postulacionesChannelId).catch(()=>null);const user=await client.users.fetch(userId).catch(()=>null);if(!ch?.isTextBased()||!user)return;await ch.send({embeds:[new EmbedBuilder().setColor(COLOR).setAuthor({name:"Feedback de postulación",iconURL:config.logoUrl}).setTitle("⭐ Calificación recibida").addFields({name:"Usuario",value:`<@${userId}>`,inline:true},{name:"Estado",value:app.feedback.status||"No definido",inline:true},{name:"Staff",value:`<@${app.feedback.staffId}>`,inline:true},{name:"Calificación",value:app.feedback.answers[0]||"Sin calificación",inline:false},{name:"Sugerencia / Comentario",value:app.feedback.answers[1]||"Sin comentario",inline:false}).setThumbnail(user.displayAvatarURL({dynamic:true})).setTimestamp()]});await botLog("⭐","Feedback recibido",`<@${userId}> — ${app.feedback.answers[0]||"?"}`,"auto");delete app.feedback;apps[userId]=app;saveApps(apps);}
 
+async function sendTicketPanelViejo(){const ch=await client.channels.fetch(configViejo.ticketPanelChannelId).catch(()=>null);if(!ch?.isTextBased())return;const meta=loadMeta();if(meta.ticketPanelViejoMessageId){const old=await ch.messages.fetch(meta.ticketPanelViejoMessageId).catch(()=>null);if(old){await old.edit(ticketPanel(GUILD_VIEJO_ID));return;}}const m=await ch.send(ticketPanel(GUILD_VIEJO_ID));meta.ticketPanelViejoMessageId=m.id;saveMeta(meta);}
+
 const client = new Client({
   intents:[GatewayIntentBits.Guilds,GatewayIntentBits.GuildMembers,GatewayIntentBits.GuildVoiceStates,GatewayIntentBits.GuildMessages,GatewayIntentBits.MessageContent,GatewayIntentBits.DirectMessages],
   partials:[Partials.Channel,Partials.Message,Partials.User]
@@ -259,13 +303,45 @@ client.once("clientReady", async () => {
   recoverTorneoRoles(client);
   startActividadTask(client);
   startInactividadTask(client);
+  startCalendarioTask(client);
+  await initPanelEventos(client, EVENTOS).catch(e => console.log("⚠️ Panel eventos:", e.message));
+  // Mensaje fijado de triunfos al iniciar
+  try {
+    const canalTriunfos = await client.channels.fetch(CANAL_TRIUNFOS_ID);
+    if (canalTriunfos) await ensurePinnedTriunfos(canalTriunfos);
+  } catch (e) { console.log("⚠️ Triunfos pin:", e.message); }
   await botLog("🟢","Bot iniciado",`Conectado como **${client.user.tag}**`,"auto");
   await sendAutoPostulacionesPanel("auto").catch(e=>console.log("⚠️",e.message));
+  await sendTicketPanelViejo().catch(e=>console.log("⚠️ Panel viejo:",e.message));
   setInterval(()=>sendAutoPostulacionesPanel("auto").catch(()=>{}), 10*60*1000);
+
+  // Mensajes fijados de comandos al iniciar
+  for (const channelId of Object.keys(COMANDOS_POR_CANAL)) {
+    try {
+      const ch = await client.channels.fetch(channelId);
+      if (ch) await ensurePinnedCommands(ch);
+    } catch (e) { console.log(`⚠️ Comandos fijados ${channelId}:`, e.message); }
+  }
 });
 
 client.on("guildMemberAdd", async member => {
   try {
+    const esViejo = member.guild.id === GUILD_VIEJO_ID;
+
+    if (esViejo) {
+      const channel = await member.guild.channels.fetch(configViejo.welcomeChannelId).catch(()=>null);
+      if (!channel?.isTextBased()) return;
+      const embed = new EmbedBuilder()
+        .setColor(COLOR)
+        .setDescription(`*Te damos la bienvenida a* 🐉 **${configViejo.guildName}**`)
+        .setThumbnail(member.user.displayAvatarURL({dynamic:true}))
+        .setImage(configViejo.bannerUrl)
+        .setFooter({text:todayFooter(member.guild.memberCount)});
+      await channel.send({content:`${member} **Bienvenido a** __${configViejo.guildName}__ 🚙`, embeds:[embed]});
+      return;
+    }
+
+    // Servidor nuevo (todo el flujo normal con postulaciones)
     const channel = await member.guild.channels.fetch(config.welcomeChannelId).catch(()=>null);
     if (!channel?.isTextBased()) return;
     const embed = new EmbedBuilder()
@@ -290,7 +366,18 @@ client.on("messageCreate", async message => {
     await handleTorneo(message);
     await handleAdmin(message, client);
     await handleNuevo(message, client);
+    await handleNuevoFotoSS(message, client);
     await handleTandas(message);
+    await handleMigrarRoles(message, client);
+    await handleEmbedCreator(message);
+    await handleTriunfos(message);
+    await handleTopTriunfos(message);
+    await handleMisTriunfos(message);
+    await handleArmarioLogs(message);
+    await handleArmarioCommand(message);
+    await handleTopArmario(message);
+    await handleTopMetio(message);
+    await handleComandosFijados(message);
 
     if (message.content.trim().toLowerCase() === "!panel") {
       if (!isStaffMember(message.member)) return message.reply("❌ No tienes permisos.").catch(()=>null);
@@ -299,7 +386,7 @@ client.on("messageCreate", async message => {
     }
     if (message.content === "!paneltickets") {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("No tienes permisos.");
-      await message.channel.send(ticketPanel());
+      await message.channel.send(ticketPanel(message.guild.id));
       return message.reply("✅ Panel enviado.");
     }
     return;
@@ -339,12 +426,19 @@ client.on("interactionCreate", async interaction => {
     await handleInactividadModal(interaction, client);
     await handleTorneoInteraction(interaction, client);
     await handleNuevoButton(interaction, client);
+    await handleTutorialButton(interaction, client);
+    await handleSSResultButton(interaction, client);
     await handleChiteadoButton(interaction, client);
+    await handleInactividadDecision(interaction, client);
+    await voiceEvent.handleAntiFarmeoButton(interaction);
+    await handleInscripcionButton(interaction);
+    await handleArmarioAlertaButton(interaction);
+    await handlePanelButton(interaction, EVENTOS);
     if (interaction.replied || interaction.deferred) return;
 
     if (interaction.isModalSubmit()) {
       if (interaction.customId === "modal_rename_ticket") {
-        if (!canManageThisTicket(interaction)) return interaction.reply({content:"No tienes permisos.",ephemeral:true});
+        if (!canRenombrarTicket(interaction)) return interaction.reply({content:"No tienes permisos.",ephemeral:true});
         const n=cleanChannelName(interaction.fields.getTextInputValue("new_name"));if(!n)return interaction.reply({content:"Nombre inválido.",ephemeral:true});
         await interaction.channel.setName(n);return interaction.reply({content:`✅ Canal renombrado a **${n}**.`,ephemeral:true});
       }
@@ -360,8 +454,9 @@ client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
     // Botón solicitar SS
-    const ENTREVISTADOR_ROLE_ID = "1469433858352222379";
-    const canSolicitar = i => canStaff(i) || i.member?.roles?.cache?.has(ENTREVISTADOR_ROLE_ID);
+    const ENTREVISTADOR_ROLE_ID = "1516258946715881592";
+    const ROL_VER_SOLICITAR_SS_ID = "1516258952101363712"; // ve el ticket + puede solicitar SS, no puede cerrar/renombrar
+    const canSolicitar = i => canStaff(i) || i.member?.roles?.cache?.has(ENTREVISTADOR_ROLE_ID) || i.member?.roles?.cache?.has(ROL_VER_SOLICITAR_SS_ID);
 
     if (interaction.customId === "solicitar_ss") {
       if (!canSolicitar(interaction))
@@ -379,7 +474,14 @@ client.on("interactionCreate", async interaction => {
       await interaction.deferReply({ephemeral:true});
       const apps=loadApps();apps[interaction.user.id]={status:"respondiendo",current:0,answers:[],createdAt:Date.now()};saveApps(apps);
       try{await askQuestion(interaction.user.id);await botLog("📝","Postulación iniciada",`<@${interaction.user.id}>`,"auto");return interaction.editReply({content:"📩 Te envié las preguntas por DM. Revisa tus mensajes privados."});}
-      catch{delete apps[interaction.user.id];saveApps(apps);return interaction.editReply({content:"No pude enviarte DM. Activa los mensajes privados e intenta otra vez."});}
+      catch(e){
+        delete apps[interaction.user.id];saveApps(apps);
+        try {
+          const canalProblemas = await client.channels.fetch("1516259311410614332");
+          await canalProblemas.send({embeds:[new EmbedBuilder().setColor(0xe74c3c).setTitle("⚠️ Problema al iniciar postulación").setDescription(`${interaction.user} intentó postular pero no se pudo enviar el DM (privados cerrados o error).`).setTimestamp()]});
+        } catch {}
+        return interaction.editReply({content:"No pude enviarte DM. Activa los mensajes privados e intenta otra vez."});
+      }
     }
 
     if (interaction.customId.startsWith("apelar_rechazo_")) {
@@ -425,16 +527,31 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.customId === "renombrar_ticket") {
-      if (!canManageThisTicket(interaction)) return interaction.reply({content:"Solo el staff puede renombrar.",ephemeral:true});
+      if (!canRenombrarTicket(interaction)) return interaction.reply({content:"Solo el staff puede renombrar.",ephemeral:true});
       return interaction.showModal(buildRenameTicketModal());
     }
 
     if (!interaction.customId.startsWith("ticket_")) return;
-    const type=interaction.customId.replace("ticket_","");const ticket=ticketTypes[type];if(!ticket)return;
+    const type=interaction.customId.replace("ticket_","");const types=getTicketTypesFor(interaction.guild.id);const ticket=types[type];if(!ticket)return;
+
+    // Botón Compras: en el servidor NUEVO manda mensaje de shop (no crea ticket). En el VIEJO abre ticket normal.
+    if (type === "compras" && interaction.guild.id !== GUILD_VIEJO_ID) {
+      const embedShop = new EmbedBuilder()
+        .setColor(COLOR)
+        .setTitle("🛍️ NUESTRA SHOP")
+        .setDescription("**EXSHOP.GG** <:ex:1516310233956483092>\n\nEntra a nuestra tienda para ver los productos disponibles 👇")
+        .setThumbnail(config.logoUrl);
+      const btnShop = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel("Ir a la Shop").setStyle(ButtonStyle.Link).setURL("https://discord.gg/USVCfqmB3S")
+      );
+      return interaction.reply({embeds:[embedShop], components:[btnShop], ephemeral:true});
+    }
+
+    const guildNombre = interaction.guild.id===GUILD_VIEJO_ID ? configViejo.guildName : config.guildName;
     const existing=interaction.guild.channels.cache.find(ch=>ch.topic?.includes(`ticketOwner:${interaction.user.id}`)&&ch.topic?.includes(`ticketType:${type}`));
     if(existing)return interaction.reply({content:`Ya tienes un ticket: ${existing}`,ephemeral:true});
-    const ch=await interaction.guild.channels.create({name:`${type}-${cleanChannelName(interaction.user.username)}`,type:ChannelType.GuildText,parent:ticket.categoryId,topic:`ticketOwner:${interaction.user.id} | ticketType:${type}`,permissionOverwrites:[{id:interaction.guild.roles.everyone.id,deny:[PermissionFlagsBits.ViewChannel]},{id:interaction.user.id,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},{id:ticket.roleId,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]}]});
-    const embed=new EmbedBuilder().setColor(COLOR).setTitle(`${ticket.emoji} ${ticket.label}`).setDescription(ticket.description).setThumbnail(config.logoUrl).setFooter({text:config.guildName});
+    const ch=await interaction.guild.channels.create({name:`${type}-${cleanChannelName(interaction.user.username)}`,type:ChannelType.GuildText,parent:ticket.categoryId,topic:`ticketOwner:${interaction.user.id} | ticketType:${type}`,permissionOverwrites:[{id:interaction.guild.roles.everyone.id,deny:[PermissionFlagsBits.ViewChannel]},{id:interaction.user.id,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},{id:ticket.roleId,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},{id:"1516258952101363712",allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]}]});
+    const embed=new EmbedBuilder().setColor(COLOR).setTitle(`${ticket.emoji} ${ticket.label}`).setDescription(ticket.description).setThumbnail(config.logoUrl).setFooter({text:guildNombre});
     const btns=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("cerrar_ticket").setLabel("Cerrar").setStyle(ButtonStyle.Danger),new ButtonBuilder().setCustomId("renombrar_ticket").setLabel("Renombrar").setStyle(ButtonStyle.Primary));
     await ch.send({content:`<@${interaction.user.id}> Has abierto un ticket de (${ticket.emoji} **${ticket.label}**). Espera que un <@&${ticket.roleId}> te atienda.`,embeds:[embed],components:[btns]});
     return interaction.reply({content:`✅ Ticket creado en ${ch}`,ephemeral:true});
