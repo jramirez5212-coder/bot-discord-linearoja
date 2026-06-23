@@ -1,5 +1,5 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { ACTIVITY_ROLE_ID, CANAL_CMD_ANUNCIOS, LOGO_URL }             = require("../config");
+const { EmbedBuilder } = require("discord.js");
+const { ACTIVITY_ROLE_ID, RUSH_ACTIVITY_ROLE_ID, CANAL_CMD_ANUNCIOS, LOGO_URL } = require("../config");
 
 const tandasActivas = new Map();
 const cooldowns     = new Map();
@@ -9,41 +9,43 @@ async function handleTandas(message) {
   if (message.author.bot) return;
   const cmd = message.content.trim().toLowerCase();
 
-  if (!["!tandastormentas", "!paratanda"].includes(cmd)) return;
-  if (!message.member.roles.cache.has(ACTIVITY_ROLE_ID))
-    return message.reply("❌ No tienes permiso.");
+  const esRush = cmd === "!tandastormentasrush" || cmd === "!paratandarush";
+  if (!["!tandastormentas","!paratanda","!tandastormentasrush","!paratandarush"].includes(cmd)) return;
 
-  // Solo en canal de anuncios
+  const rolReq = esRush ? RUSH_ACTIVITY_ROLE_ID : ACTIVITY_ROLE_ID;
+  if (!message.member.roles.cache.has(rolReq))
+    return message.reply(`❌ Solo ${esRush ? "RUSH" : "ROLAS"} puede usar este comando.`);
+
   if (message.channel.id !== CANAL_CMD_ANUNCIOS) {
     const aviso = await message.reply(`❌ Este comando solo se puede usar en <#${CANAL_CMD_ANUNCIOS}>`);
     setTimeout(() => { try { aviso.delete(); message.delete(); } catch {} }, 5000);
     return;
   }
 
-  // ── !paratanda ────────────────────────────────────────────────
-  if (cmd === "!paratanda") {
-    const tanda = tandasActivas.get(message.channel.id);
-    if (!tanda) return message.reply("❌ No hay ninguna tanda activa en este canal.");
+  const tandasKey = `${message.channel.id}:${esRush ? "rush" : "rolas"}`;
+
+  // ── !paratanda / !paratandarush ───────────────────────────────
+  if (cmd === "!paratanda" || cmd === "!paratandarush") {
+    const tanda = tandasActivas.get(tandasKey);
+    if (!tanda) return message.reply("❌ No hay ninguna tanda activa.");
     if (tanda.userId !== message.author.id)
       return message.reply("❌ Solo quien activó la tanda puede pararla.");
-
     clearInterval(tanda.interval);
-    tandasActivas.delete(message.channel.id);
+    tandasActivas.delete(tandasKey);
     try { await message.delete(); } catch {}
-
     await message.channel.send({ embeds: [new EmbedBuilder()
       .setColor(0x39FF14)
-      .setTitle("✅ Tanda de tormentas detenida")
+      .setTitle(`✅ Tanda detenida — ${esRush ? "RUSH" : "ROLAS"}`)
       .setDescription(`${message.author} detuvo la tanda de tormentas.`)
       .setTimestamp()] });
     return;
   }
 
-  // ── !tandastormentas ──────────────────────────────────────────
-  if (tandasActivas.has(message.channel.id))
+  // ── !tandastormentas / !tandastormentasrush ───────────────────
+  if (tandasActivas.has(tandasKey))
     return message.reply("❌ Ya hay una tanda activa. Usa `!paratanda` para detenerla.");
 
-  const key    = `tanda:${message.author.id}`;
+  const key    = `tanda:${message.author.id}:${esRush?"rush":"rolas"}`;
   const ultimo = cooldowns.get(key);
   if (ultimo && Date.now() - ultimo < COOLDOWN_MS) {
     const segs = Math.ceil((COOLDOWN_MS - (Date.now() - ultimo)) / 1000);
@@ -55,14 +57,16 @@ async function handleTandas(message) {
   let enviados = 0;
   const MAX    = 8;
   const canal  = message.channel;
+  // Sin mención de rol
+  const label  = esRush ? "RUSH" : "ROLAS";
 
   const enviarMensaje = async (num) => {
     try {
       await canal.send({
-        content: `<@&${ACTIVITY_ROLE_ID}>`,
+        // sin content
         embeds: [new EmbedBuilder()
           .setColor(0x3498db)
-          .setTitle(`🌪️ TANDA DE TORMENTAS — ¡ENTRAR! (${num}/${MAX})`)
+          .setTitle(`🌪️ TANDA DE TORMENTAS — ${label} ¡ENTRAR! (${num}/${MAX})`)
           .setDescription("**¡¡¡TANDA DE TORMENTAS, ENTREN!!!!!!**\n\n🌪️ ¡Todos al canal de voz AHORA!")
           .setThumbnail(LOGO_URL)
           .setFooter({ text: `Aviso ${num} de ${MAX} • Próximo en 5 min` })
@@ -78,21 +82,20 @@ async function handleTandas(message) {
   const interval = setInterval(async () => {
     enviados++;
     await enviarMensaje(enviados);
-
     if (enviados >= MAX) {
       clearInterval(interval);
-      tandasActivas.delete(canal.id);
+      tandasActivas.delete(tandasKey);
       try {
         await canal.send({ embeds: [new EmbedBuilder()
           .setColor(0x39FF14)
-          .setTitle("✅ Tanda de tormentas finalizada")
+          .setTitle(`✅ Tanda finalizada — ${label}`)
           .setDescription(`Se enviaron **${MAX} avisos**. ¡A jugar! 🎮`)
           .setTimestamp()] });
       } catch {}
     }
   }, 5 * 60 * 1000);
 
-  tandasActivas.set(canal.id, { interval, userId: message.author.id });
+  tandasActivas.set(tandasKey, { interval, userId: message.author.id });
 }
 
 module.exports = { handleTandas };

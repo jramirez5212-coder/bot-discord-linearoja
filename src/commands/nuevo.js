@@ -3,15 +3,17 @@ const {
 } = require("discord.js");
 const { STAFF_ROLE_ID, LOGO_URL,
         CANAL_CMD_HORAS, CANAL_CMD_INACTIVO,
-        CANAL_CMD_TORNEO, CANAL_CMD_ANUNCIOS } = require("../config");
+        CANAL_CMD_TORNEO, CANAL_CMD_ANUNCIOS,
+        ACTIVITY_ROLE_ID, RUSH_ACTIVITY_ROLE_ID } = require("../config");
 
-// Roles que se le dan al nuevo miembro
-const ROLES_NUEVO = [
-  "1516258966756266054",
+// Roles base que se dan a cualquier nuevo miembro (sin el rol de actividad)
+const ROLES_BASE = [
   "1516258974163402862",
   "1516258980601659583",
   "1516258985286696961",
 ];
+// ROLAS = roles base + rol actividad ROLAS
+// RUSH  = roles base + rol actividad RUSH
 
 const CANAL_BIENVENIDA_NUEVO = "1516662918664683561";
 const CANAL_VIDEO_TUTORIAL   = "1516684343010136094";
@@ -233,125 +235,44 @@ async function handleSSResultButton(interaction, client) {
     const { marcarChiteado } = require("./admin");
     await marcarChiteado(target, client, null, fotoAdjunta);
 
-    // Plantilla simple (sin foto) al ticket de postulación
     const ticketPostulacion = guild.channels.cache.find(ch => ch.topic?.includes(`postulacionUser:${target.id}`));
     if (ticketPostulacion) {
       await ticketPostulacion.send({
         embeds: [new EmbedBuilder()
           .setColor(0xe74c3c)
           .setTitle("❌ Usuario marcado como Chiteado")
-          .setDescription(
-            `**Usuario:** ${target}\n` +
-            `**Atendió (!nuevo):** <@${solicitud.atendioId}>\n\n` +
-            `Se activó el sistema de chiteado automáticamente.`
-          )
+          .setDescription(`**Usuario:** ${target}\n**Atendió (!nuevo):** <@${solicitud.atendioId}>\n\nSe activó el sistema de chiteado automáticamente.`)
           .setTimestamp()]
       });
     }
-
-    // Plantilla completa con la foto, se queda en el canal de SS
     await interaction.channel.send({
-      embeds: [new EmbedBuilder()
-        .setColor(0xe74c3c)
-        .setTitle("❌ Usuario marcado como Chiteado")
-        .setDescription(
-          `**Usuario:** ${target}\n` +
-          `**Atendió (!nuevo):** <@${solicitud.atendioId}>\n` +
-          `**SS realizada por:** ${interaction.user}\n\n` +
-          `Se activó el sistema de chiteado automáticamente.`
-        )
-        .setImage(fotoEmbedRef)
-        .setTimestamp()],
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle("❌ Usuario marcado como Chiteado")
+        .setDescription(`**Usuario:** ${target}\n**Atendió (!nuevo):** <@${solicitud.atendioId}>\n**SS realizada por:** ${interaction.user}\n\nSe activó el sistema de chiteado automáticamente.`)
+        .setImage(fotoEmbedRef).setTimestamp()],
       files: fotoAdjunta
     });
     return;
   }
 
-  // Limpio: asignar roles, mandar DM, tutorial
-  const rolesOk = [];
-  const rolesFail = [];
-  for (const rolId of ROLES_NUEVO) {
-    try {
-      await target.roles.add(rolId);
-      rolesOk.push(rolId);
-    } catch {
-      rolesFail.push(rolId);
-    }
-  }
+  // Limpio: preguntar ROLAS o RUSH antes de asignar roles
+  const rowBanda = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`nuevo_banda:ROLAS:${solicitudId}`).setLabel("🟢 ROLAS").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`nuevo_banda:RUSH:${solicitudId}`).setLabel("🔴 RUSH").setStyle(ButtonStyle.Danger),
+  );
 
-  try {
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`btn_leido:${target.id}`)
-        .setLabel("✅ Leído — ¡Entendido!")
-        .setStyle(ButtonStyle.Success)
-    );
-    await target.send({ embeds: [buildDMEmbed(target)], components: [row] });
-  } catch(e) {
-    console.error("[NUEVO] Error enviando DM:", e.message);
-  }
+  // Guardar solicitud para usarla cuando elijan la banda
+  solicitud.fotoAdjunta  = fotoAdjunta;
+  solicitud.fotoEmbedRef = fotoEmbedRef;
+  solicitud.targetId     = target.id;
+  pendientesSS.set(solicitudId, solicitud); // re-guardar con datos extra
 
-  // Plantilla simple (sin foto) — se manda al ticket de postulación del usuario
-  const ticketPostulacion = guild.channels.cache.find(ch => ch.topic?.includes(`postulacionUser:${target.id}`));
-  if (ticketPostulacion) {
-    await ticketPostulacion.send({
-      embeds: [new EmbedBuilder()
-        .setColor(0x39FF14)
-        .setTitle("✅ Nuevo miembro aprobado — Limpio")
-        .setDescription(
-          `**Usuario:** ${target}\n` +
-          `**Atendió (!nuevo):** <@${solicitud.atendioId}>\n` +
-          `**Aprobó (resultado SS):** ${interaction.user}\n\n` +
-          `🎭 Roles asignados: ${rolesOk.map(r=>`<@&${r}>`).join(", ")}\n` +
-          (rolesFail.length ? `⚠️ Roles fallidos: ${rolesFail.map(r=>`<@&${r}>`).join(", ")}` : "")
-        )
-        .setTimestamp()]
-    });
-  }
-
-  // Plantilla completa con la foto — se queda en el canal de SS
   await interaction.channel.send({
-    embeds: [new EmbedBuilder()
-      .setColor(0x39FF14)
-      .setTitle("✅ Nuevo miembro aprobado — Limpio")
-      .setDescription(
-        `**Usuario:** ${target}\n` +
-        `**Atendió (!nuevo):** <@${solicitud.atendioId}>\n` +
-        `**Aprobó (resultado SS):** ${interaction.user}\n` +
-        `**SS realizada por:** ${interaction.user}\n\n` +
-        `🎭 Roles asignados: ${rolesOk.map(r=>`<@&${r}>`).join(", ")}\n` +
-        (rolesFail.length ? `⚠️ Roles fallidos: ${rolesFail.map(r=>`<@&${r}>`).join(", ")}` : "")
-      )
-      .setImage(fotoEmbedRef)
+    content: `<@${solicitud.atendioId}>`,
+    embeds: [new EmbedBuilder().setColor(0x39FF14).setTitle("✅ Limpio — ¿Banda?")
+      .setDescription(`**${target}** salió limpio. ¿A qué banda pertenece?`)
       .setTimestamp()],
-    files: fotoAdjunta
+    components: [rowBanda]
   });
-
-  // Enviar tutorial en el canal original donde se ejecutó !nuevo
-  try {
-    const canalComando = await client.channels.fetch(solicitud.canalComandoId);
-    const videoAttachment = await getTutorialVideoAttachment(client);
-    const rowTutorial = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`tutorial_claro:${target.id}`).setLabel("✅ Todo claro").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`tutorial_dudas:${target.id}`).setLabel("❓ Tengo dudas").setStyle(ButtonStyle.Danger)
-    );
-    const embedTutorial = new EmbedBuilder()
-      .setColor(0x39FF14)
-      .setTitle("🎬 Tutorial de Discord — EXLATAM")
-      .setDescription(
-        `${target}, antes de empezar mira el **tutorial completo** sobre cómo funciona el servidor.\n\n` +
-        `📺 **Ve el video completo** para entender canales, comandos y reglas.\n\n` +
-        (videoAttachment ? "" : "⚠️ *No se encontró el video en este momento, avisa al staff.*")
-      )
-      .setTimestamp();
-
-    await canalComando.send({ embeds: [embedTutorial], components: [rowTutorial] });
-    if (videoAttachment) {
-      try { await canalComando.send({ content: videoAttachment.url }); } catch {}
-    }
-  } catch(e) {
-    console.error("[NUEVO] Error enviando tutorial:", e.message);
-  }
 }
 
 // Cuando el usuario presiona "Leído"
@@ -427,4 +348,76 @@ async function handleTutorialButton(interaction, client) {
   } catch {}
 }
 
-module.exports = { handleNuevo, handleNuevoButton, handleTutorialButton, handleNuevoFotoSS, handleSSResultButton };
+// Handler botón ROLAS/RUSH después de confirmar limpio
+async function handleBandaButton(interaction, client) {
+  if (!interaction.isButton()) return;
+  if (!interaction.customId.startsWith("nuevo_banda:")) return;
+
+  const partes      = interaction.customId.split(":");
+  const banda       = partes[1]; // "ROLAS" o "RUSH"
+  const solicitudId = partes[2];
+  const solicitud   = pendientesSS.get(solicitudId);
+  if (!solicitud) return interaction.reply({ content: "❌ Solicitud no encontrada.", ephemeral: true });
+
+  if (interaction.user.id !== solicitud.atendioId)
+    return interaction.reply({ content: "❌ Solo quien ejecutó `!nuevo` puede elegir la banda.", ephemeral: true });
+
+  pendientesSS.delete(solicitudId);
+  try { await interaction.message.delete(); } catch {}
+
+  const guild  = await client.guilds.fetch(interaction.guildId);
+  const target = await guild.members.fetch(solicitud.targetId).catch(() => null);
+  if (!target) return interaction.reply({ content: "❌ Usuario no encontrado.", ephemeral: true });
+
+  const rolActividad = banda === "RUSH" ? RUSH_ACTIVITY_ROLE_ID : ACTIVITY_ROLE_ID;
+  const rolesAsignar = [...ROLES_BASE, rolActividad];
+
+  const rolesOk = [], rolesFail = [];
+  for (const rolId of rolesAsignar) {
+    try { await target.roles.add(rolId); rolesOk.push(rolId); }
+    catch { rolesFail.push(rolId); }
+  }
+
+  // Mandar DM
+  try {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`btn_leido:${target.id}`).setLabel("✅ Leído — ¡Entendido!").setStyle(ButtonStyle.Success)
+    );
+    await target.send({ embeds: [buildDMEmbed(target)], components: [row] });
+  } catch(e) { console.error("[NUEVO] Error DM:", e.message); }
+
+  // Plantilla simple en ticket
+  const ticketPostulacion = guild.channels.cache.find(ch => ch.topic?.includes(`postulacionUser:${target.id}`));
+  if (ticketPostulacion) {
+    await ticketPostulacion.send({
+      embeds: [new EmbedBuilder().setColor(0x39FF14).setTitle(`✅ Nuevo miembro aprobado — Limpio (${banda})`)
+        .setDescription(`**Usuario:** ${target}\n**Atendió (!nuevo):** <@${solicitud.atendioId}>\n**Aprobó:** ${interaction.user}\n**Banda:** ${banda}\n\n🎭 Roles asignados: ${rolesOk.map(r=>`<@&${r}>`).join(", ")}`)
+        .setTimestamp()]
+    });
+  }
+
+  // Plantilla con foto en canal SS
+  const { fotoAdjunta, fotoEmbedRef } = solicitud;
+  await interaction.channel.send({
+    embeds: [new EmbedBuilder().setColor(0x39FF14).setTitle(`✅ Nuevo miembro aprobado — Limpio (${banda})`)
+      .setDescription(`**Usuario:** ${target}\n**Atendió (!nuevo):** <@${solicitud.atendioId}>\n**Aprobó:** ${interaction.user}\n**SS realizada por:** ${interaction.user}\n**Banda:** ${banda}\n\n🎭 Roles: ${rolesOk.map(r=>`<@&${r}>`).join(", ")}`)
+      .setImage(fotoEmbedRef).setTimestamp()],
+    files: fotoAdjunta || []
+  });
+
+  // Tutorial en canal original
+  try {
+    const canalComando = await client.channels.fetch(solicitud.canalComandoId);
+    const videoAttachment = await getTutorialVideoAttachment(client);
+    const rowTutorial = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`tutorial_claro:${target.id}`).setLabel("✅ Todo claro").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`tutorial_dudas:${target.id}`).setLabel("❓ Tengo dudas").setStyle(ButtonStyle.Danger)
+    );
+    const embedTutorial = new EmbedBuilder().setColor(0x39FF14).setTitle("🎬 Tutorial de Discord — EXLATAM")
+      .setDescription(`${target}, antes de empezar mira el **tutorial completo**.\n📺 **Ve el video completo** para entender canales, comandos y reglas.`).setTimestamp();
+    await canalComando.send({ embeds: [embedTutorial], components: [rowTutorial] });
+    if (videoAttachment) { try { await canalComando.send({ content: videoAttachment.url }); } catch {} }
+  } catch(e) { console.error("[NUEVO] Error tutorial:", e.message); }
+}
+
+module.exports = { handleNuevo, handleNuevoButton, handleTutorialButton, handleNuevoFotoSS, handleSSResultButton, handleBandaButton };

@@ -14,10 +14,12 @@ const https = require("https");
 
 const voiceEvent                   = require("./src/events/voiceStateUpdate");
 const { handleHoras }              = require("./src/commands/horas");
+const { handleHorasRush }          = require("./src/commands/horasRush");
 const { handleAnuncios }           = require("./src/commands/anuncios");
 const { handleInactividad,
         handleInactividadButton,
         handleInactividadModal,
+        handleRegresesButton,
         isExcused }                = require("./src/commands/inactividad");
 const { handleTorneo,
         handleTorneoInteraction,
@@ -28,7 +30,8 @@ const { handleNuevo,
         handleNuevoButton,
         handleTutorialButton,
         handleNuevoFotoSS,
-        handleSSResultButton }      = require("./src/commands/nuevo");
+        handleSSResultButton,
+        handleBandaButton }         = require("./src/commands/nuevo");
 const { handleTandas }             = require("./src/commands/tandas");
 const { handleInactividadDecision } = require("./src/commands/inactividadDecision");
 const { handleMigrarRoles }        = require("./src/commands/migrarRoles");
@@ -36,9 +39,13 @@ const { handleComandosFijados, ensurePinnedCommands, COMANDOS_POR_CANAL } = requ
 const { handleTriunfos, ensurePinnedTriunfos, CANAL_TRIUNFOS_ID, handleTopTriunfos, handleMisTriunfos } = require("./src/commands/triunfos");
 const { handleArmarioLogs, handleArmarioCommand, handleTopArmario, handleTopMetio, handleArmarioAlertaButton } = require("./src/commands/armario");
 const { startActividadTask }       = require("./src/tasks/actividadTask");
+const { startActividadRushTask }   = require("./src/tasks/actividadRushTask");
+const { startPresenciaRushTask }   = require("./src/tasks/presenciaRushTask");
 const { startInactividadTask }     = require("./src/tasks/inactividadTask");
+const { startInactividadRushTask } = require("./src/tasks/inactividadRushTask");
 const { startCalendarioTask, handleInscripcionButton, EVENTOS } = require("./src/tasks/calendarioTask");
-const { initPanelEventos, handlePanelButton, handleEmbedCreator } = require("./src/commands/panelEventos");
+const { startCalendarioRushTask, handleInscripcionRushButton, EVENTOS: EVENTOS_RUSH } = require("./src/tasks/calendarioRushTask");
+const { initPanelEventos, handlePanelButton, handleEmbedCreator, handleAnuncioCmd, handleRecordatorio, handleEncuesta } = require("./src/commands/panelEventos");
 
 global.isExcused = isExcused;
 
@@ -75,7 +82,7 @@ const configViejo = {
   bannerUrl: config.bannerUrl,
 };
 
-const questions = ["Nombre:","Residencia/País?:","Edad (**mínimo 15**):","5 Clips o 1HG:","Foto de las horas de FiveM:","Foto KD (**mínimo 1.8**):","Link Steam Público:","Tiempo Disponible?:"];
+const questions = ["Nombre:","Residencia/País?:","Edad (**mínimo 15**)","5 Clips o 1HG:","Foto de las horas de FiveM:","Foto KD (**mínimo 1.8**)","Link Steam Público:","Tiempo Disponible?:","¿Te postulas para ROLAS o RUSH? (escribe exactamente ROLAS o RUSH)"];
 
 const ticketTypes = {
   reportes: { label:"Reportes", emoji:"⛔",  categoryId:"1516259251750834226", roleId:"1516258948871753902", description:"⚠️ **Cuéntanos en qué te podemos ayudar.**\n\n~ Usuario reportado:\n~ Motivo del reporte:\n~ Pruebas / clips:\n~ Explicación completa de lo sucedido:" },
@@ -242,18 +249,19 @@ async function sendApplicationToStaff(userId) {
   } catch(e) { console.log("❌", e.message); }
 }
 
-async function createResultTicket(userId, status, staffUser) {
+async function createResultTicket(userId, status, staffUser, banda = null) {
   try {
     const guild   = await client.guilds.fetch(config.guildId);
     const user    = await client.users.fetch(userId).catch(() => null);
     if (!user) return null;
     const approved = status === "aprobada";
+    const bandaLabel = banda ? `-${banda.toLowerCase()}` : "";
 
     const ch = await guild.channels.create({
-      name: `${approved?"aprobado":"rechazado"}-${cleanName(user.username)}`,
+      name: `${approved?"aprobado":"rechazado"}${bandaLabel}-${cleanName(user.username)}`,
       type: ChannelType.GuildText,
       parent: approved ? config.categoriaAprobadosId : config.categoriaRechazadosId,
-      topic: `postulacionUser:${userId} | status:${status} | staff:${staffUser.id} | createdAt:${Date.now()}`,
+      topic: `postulacionUser:${userId} | status:${status} | staff:${staffUser.id} | banda:${banda||"?"} | createdAt:${Date.now()}`,
       permissionOverwrites: [
         {id:guild.roles.everyone.id, deny:[PermissionFlagsBits.ViewChannel]},
         {id:userId, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},
@@ -264,22 +272,23 @@ async function createResultTicket(userId, status, staffUser) {
     const embed = new EmbedBuilder()
       .setColor(approved ? COLOR : 0xff3c3c)
       .setAuthor({name:"EXLATAM Postulaciones", iconURL:config.logoUrl})
-      .setTitle(approved ? "✅ **POSTULACIÓN** Aprobada" : "❌ **POSTULACIÓN** Rechazada")
+      .setTitle(approved ? `✅ **POSTULACIÓN** Aprobada${banda ? ` — ${banda}` : ""}` : "❌ **POSTULACIÓN** Rechazada")
       .setDescription(approved
-        ? `Tu **POSTULACIÓN** fue **aprobada** por ${staffUser}.\n\nAhora pasas a la **segunda etapa del proceso**, la cual se realizará por **llamada**.\n\nCuando el staff te notifique, deberás entrar a la **sala de espera** para continuar con la entrevista.`
+        ? `Tu **POSTULACIÓN** fue **aprobada** por ${staffUser}.\n\nFuiste asignado a la banda **${banda || "?"}**.\n\nAhora pasas a la **segunda etapa del proceso**, la cual se realizará por **llamada**.\n\nCuando el staff te notifique, deberás entrar a la **sala de espera** para continuar con la entrevista.`
         : `Tu **POSTULACIÓN** fue **rechazada** por ${staffUser}.\n\nPuedes usar este ticket para preguntar el motivo o apelar la decisión de forma respetuosa.`
       )
       .addFields(
-        {name: "👤 Solicitante", value: `<@${userId}>`,      inline: true},
-        {name: "⚖️ Revisado por", value: `${staffUser}`,     inline: true},
+        {name: "👤 Solicitante",  value: `<@${userId}>`,      inline: true},
+        {name: "⚖️ Revisado por", value: `${staffUser}`,      inline: true},
         {name: "📊 Estado",       value: approved ? "`Aprobada`" : "`Rechazada`", inline: true},
+        ...(banda && approved ? [{name: "🎯 Banda", value: `**${banda}**`, inline: true}] : []),
       )
       .setThumbnail(config.logoUrl)
       .setFooter({text:config.guildName, iconURL:config.logoUrl})
       .setTimestamp();
 
     await ch.send({content:`<@${userId}> <@&${config.staffBandasRoleId}>`, embeds:[embed], components:[resultTicketButtons()]});
-    await botLog(approved?"✅":"❌", `Ticket ${approved?"aprobado":"rechazado"} creado`, `Usuario: <@${userId}> | Staff: ${staffUser} | Canal: ${ch}`, "auto");
+    await botLog(approved?"✅":"❌", `Ticket ${approved?"aprobado":"rechazado"} creado`, `Usuario: <@${userId}> | Staff: ${staffUser} | Banda: ${banda||"?"} | Canal: ${ch}`, "auto");
     return ch;
   } catch(e) { console.log("❌", e.message); return null; }
 }
@@ -302,9 +311,15 @@ client.once("clientReady", async () => {
   voiceEvent.recoverSessions(client);
   recoverTorneoRoles(client);
   startActividadTask(client);
+  // RUSH solo tiene sistema de inactividad, no de horas/actividad
+  // startActividadRushTask desactivado intencionalmente
+  setTimeout(() => startInactividadRushTask(client), 15000);
+  startPresenciaRushTask(client);
   startInactividadTask(client);
+  startInactividadRushTask(client);
   startCalendarioTask(client);
-  await initPanelEventos(client, EVENTOS).catch(e => console.log("⚠️ Panel eventos:", e.message));
+  startCalendarioRushTask(client);
+  await initPanelEventos(client, EVENTOS, EVENTOS_RUSH).catch(e => console.log("⚠️ Panel eventos:", e.message));
   // Mensaje fijado de triunfos al iniciar
   try {
     const canalTriunfos = await client.channels.fetch(CANAL_TRIUNFOS_ID);
@@ -357,10 +372,17 @@ client.on("guildMemberAdd", async member => {
 client.on("voiceStateUpdate",(o,n)=>voiceEvent.execute(o,n,client));
 
 client.on("messageCreate", async message => {
-  if (message.author.bot) return;
+  if (message.guild) {
+    // Armario primero — Rolas Academy es un bot y necesita procesarse
+    await handleArmarioLogs(message);
+    await handleComandosFijados(message);
+  }
+
+  if (message.author.bot) return; // ignorar otros bots para el resto de comandos
 
   if (message.guild) {
     await handleHoras(message, client);
+    await handleHorasRush(message, client);
     await handleAnuncios(message);
     await handleInactividad(message);
     await handleTorneo(message);
@@ -370,14 +392,57 @@ client.on("messageCreate", async message => {
     await handleTandas(message);
     await handleMigrarRoles(message, client);
     await handleEmbedCreator(message);
+    await handleAnuncioCmd(message);
+    await handleRecordatorio(message);
+    await handleEncuesta(message);
     await handleTriunfos(message);
     await handleTopTriunfos(message);
     await handleMisTriunfos(message);
-    await handleArmarioLogs(message);
     await handleArmarioCommand(message);
     await handleTopArmario(message);
     await handleTopMetio(message);
-    await handleComandosFijados(message);
+
+    // ── Comandos de control del anti-farmeo ──────────────────────────────────
+    const cmdAfk = message.content.trim().toLowerCase().split(/\s+/);
+    const afkCmds = ["!desactivarafk","!activarafk","!desactivarsilenciadoafk","!activarsilenciadoafk","!desactivarensordecidoafk","!activarensordecidoafk"];
+    if (afkCmds.includes(cmdAfk[0])) {
+      if (!isStaffMember(message.member)) return message.reply("❌ No tienes permiso.").catch(()=>null);
+      const target = message.mentions.members.first();
+      if (!target) return message.reply("❌ Menciona a un usuario. Ej: `!desactivarafk @usuario`").catch(()=>null);
+      const uid = target.id;
+      let respuesta = "";
+      switch(cmdAfk[0]) {
+        case "!desactivarafk":
+          voiceEvent.afkExemptos.add(uid);
+          voiceEvent.afkExemptosMute.add(uid);
+          voiceEvent.afkExemptoDeaf.add(uid);
+          respuesta = `✅ **Anti-farmeo desactivado** para ${target} (ensordecido + silenciado).`;
+          break;
+        case "!activarafk":
+          voiceEvent.afkExemptos.delete(uid);
+          voiceEvent.afkExemptosMute.delete(uid);
+          voiceEvent.afkExemptoDeaf.delete(uid);
+          respuesta = `✅ **Anti-farmeo activado** para ${target}.`;
+          break;
+        case "!desactivarsilenciadoafk":
+          voiceEvent.afkExemptosMute.add(uid);
+          respuesta = `✅ ${target} ya no será chequeado por estar **silenciado**.`;
+          break;
+        case "!activarsilenciadoafk":
+          voiceEvent.afkExemptosMute.delete(uid);
+          respuesta = `✅ ${target} volverá a ser chequeado por estar **silenciado**.`;
+          break;
+        case "!desactivarensordecidoafk":
+          voiceEvent.afkExemptoDeaf.add(uid);
+          respuesta = `✅ ${target} ya no será chequeado por estar **ensordecido**.`;
+          break;
+        case "!activarensordecidoafk":
+          voiceEvent.afkExemptoDeaf.delete(uid);
+          respuesta = `✅ ${target} volverá a ser chequeado por estar **ensordecido**.`;
+          break;
+      }
+      return message.reply(respuesta).catch(()=>null);
+    }
 
     if (message.content.trim().toLowerCase() === "!panel") {
       if (!isStaffMember(message.member)) return message.reply("❌ No tienes permisos.").catch(()=>null);
@@ -428,12 +493,15 @@ client.on("interactionCreate", async interaction => {
     await handleNuevoButton(interaction, client);
     await handleTutorialButton(interaction, client);
     await handleSSResultButton(interaction, client);
+    await handleBandaButton(interaction, client);
     await handleChiteadoButton(interaction, client);
     await handleInactividadDecision(interaction, client);
+    await handleRegresesButton(interaction, client);
     await voiceEvent.handleAntiFarmeoButton(interaction);
     await handleInscripcionButton(interaction);
+    await handleInscripcionRushButton(interaction);
     await handleArmarioAlertaButton(interaction);
-    await handlePanelButton(interaction, EVENTOS);
+    await handlePanelButton(interaction, EVENTOS, EVENTOS_RUSH);
     if (interaction.replied || interaction.deferred) return;
 
     if (interaction.isModalSubmit()) {
@@ -509,10 +577,25 @@ client.on("interactionCreate", async interaction => {
       const approved=interaction.customId.startsWith("aprobar_");const uid=interaction.customId.split("_")[1];
       const user=await client.users.fetch(uid).catch(()=>null);if(!user)return interaction.reply({content:"No encontré al usuario.",ephemeral:true});
       if(approved){
-        await user.send({content:`✅ Tu **POSTULACIÓN** fue aprobada por ${interaction.user}.\n\nSe creó un ticket para continuar. La segunda etapa será por llamada.`}).catch(()=>null);
-        const t=await createResultTicket(uid,"aprobada",interaction.user);
+        // Detectar si se postuló para ROLAS o RUSH según la última respuesta
+        const apps = loadApps();
+        const app  = apps[uid];
+        const ultimaRespuesta = app?.answers?.[app.answers.length - 1]?.toLowerCase() || "";
+        const esRush = ultimaRespuesta.includes("rush");
+        const rolActividad = esRush ? "1518491812593926274" : "1516258966756266054";
+        const banda = esRush ? "RUSH" : "ROLAS";
+
+        // Asignar rol de actividad correcto
+        try {
+          const guild  = await client.guilds.fetch("1188377448346288158");
+          const member = await guild.members.fetch(uid).catch(()=>null);
+          if (member) await member.roles.add(rolActividad).catch(()=>null);
+        } catch(e) { console.error("[POSTULACION] Error asignando rol:", e.message); }
+
+        await user.send({content:`✅ Tu **POSTULACIÓN** fue aprobada por ${interaction.user}.\n\nFuiste asignado a **${banda}**. Se creó un ticket para continuar. La segunda etapa será por llamada.`}).catch(()=>null);
+        const t=await createResultTicket(uid,"aprobada",interaction.user, banda);
         await interaction.message.edit({components:[]}).catch(()=>null);
-        return interaction.reply({content:`✅ Aprobada. Ticket: ${t}`,ephemeral:true});
+        return interaction.reply({content:`✅ Aprobada (${banda}). Ticket: ${t}`,ephemeral:true});
       }
       await sendRejectAppealDM(user,interaction.user);
       const apps=loadApps();apps[uid]=apps[uid]||{};apps[uid].lastRejectStaffId=interaction.user.id;apps[uid].status="rechazada";apps[uid].reviewedAt=Date.now();saveApps(apps);
@@ -550,7 +633,20 @@ client.on("interactionCreate", async interaction => {
     const guildNombre = interaction.guild.id===GUILD_VIEJO_ID ? configViejo.guildName : config.guildName;
     const existing=interaction.guild.channels.cache.find(ch=>ch.topic?.includes(`ticketOwner:${interaction.user.id}`)&&ch.topic?.includes(`ticketType:${type}`));
     if(existing)return interaction.reply({content:`Ya tienes un ticket: ${existing}`,ephemeral:true});
-    const ch=await interaction.guild.channels.create({name:`${type}-${cleanChannelName(interaction.user.username)}`,type:ChannelType.GuildText,parent:ticket.categoryId,topic:`ticketOwner:${interaction.user.id} | ticketType:${type}`,permissionOverwrites:[{id:interaction.guild.roles.everyone.id,deny:[PermissionFlagsBits.ViewChannel]},{id:interaction.user.id,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},{id:ticket.roleId,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},{id:"1516258952101363712",allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]}]});
+
+    // Verificar que los roles existen en el guild antes de usarlos en permissionOverwrites
+    await interaction.guild.roles.fetch();
+    const rolTicket   = interaction.guild.roles.cache.get(ticket.roleId);
+    const rolEspecial = interaction.guild.roles.cache.get("1516258952101363712");
+
+    const overwrites = [
+      {id:interaction.guild.roles.everyone.id, deny:[PermissionFlagsBits.ViewChannel]},
+      {id:interaction.user.id, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]},
+    ];
+    if (rolTicket)   overwrites.push({id:ticket.roleId, allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.ManageMessages,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.EmbedLinks]});
+    if (rolEspecial) overwrites.push({id:"1516258952101363712", allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]});
+
+    const ch=await interaction.guild.channels.create({name:`${type}-${cleanChannelName(interaction.user.username)}`,type:ChannelType.GuildText,parent:ticket.categoryId,topic:`ticketOwner:${interaction.user.id} | ticketType:${type}`,permissionOverwrites:overwrites});
     const embed=new EmbedBuilder().setColor(COLOR).setTitle(`${ticket.emoji} ${ticket.label}`).setDescription(ticket.description).setThumbnail(config.logoUrl).setFooter({text:guildNombre});
     const btns=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("cerrar_ticket").setLabel("Cerrar").setStyle(ButtonStyle.Danger),new ButtonBuilder().setCustomId("renombrar_ticket").setLabel("Renombrar").setStyle(ButtonStyle.Primary));
     await ch.send({content:`<@${interaction.user.id}> Has abierto un ticket de (${ticket.emoji} **${ticket.label}**). Espera que un <@&${ticket.roleId}> te atienda.`,embeds:[embed],components:[btns]});

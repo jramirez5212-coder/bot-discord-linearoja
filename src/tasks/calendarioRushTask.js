@@ -1,35 +1,31 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { CANAL_CMD_ANUNCIOS, CANAL_CMD_TORNEO, ACTIVITY_ROLE_ID } = require("../config");
+const { CANAL_CMD_ANUNCIOS, CANAL_CMD_TORNEO, RUSH_ACTIVITY_ROLE_ID } = require("../config");
 
 const ROL_MEGA_1 = "1516258964709445642";
 const ROL_MEGA_2 = "1516258963459539074";
 
-// ROLAS — menciona solo el rol de actividad ROLAS
-const ROL_MENTION = `<@&${ACTIVITY_ROLE_ID}>`;
+const ROL_MENTION = `<@&${RUSH_ACTIVITY_ROLE_ID}>`;
 
-
-// ── CALENDARIO ────────────────────────────────────────────────────────────────
-// tipo: torneo | tormenta | battle | drop | mega_torneo | mega_battle
+// ── CALENDARIO RUSH ───────────────────────────────────────────────────────────
 const EVENTOS = [
-  { hora: "15:00", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
-  { hora: "15:30", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2  },
-  { hora: "16:00", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2  },
-  { hora: "16:30", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2  },
-  { hora: "17:30", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3  },
-  { hora: "18:30", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
-  { hora: "19:00", nombre: "Tanda de Tormentas (8 tormentas)",tipo: "tormenta",    puntos: null,     rank: "F7", jugadores: null },
-  { hora: "20:00", nombre: "Torneo Bandas 4v4",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 4  },
-  { hora: "20:40", nombre: "x1 Battle Royale",                tipo: "battle",      puntos: null,     rank: "F7", jugadores: null },
-  { hora: "21:00", nombre: "MEGA TORNEO 5v5-10v10 (Sorteo)",  tipo: "mega_torneo", puntos: "x3 pts", rank: "F4", jugadores: null },
-  { hora: "22:00", nombre: "MEGA BATTLE ROYALE",              tipo: "mega_battle", puntos: null,     rank: "F7", jugadores: null },
-  { hora: "22:30", nombre: "DROP DEL DÍA",                    tipo: "drop",        puntos: "x1 pts", rank: "F9", jugadores: null },
-  { hora: "23:00", nombre: "Torneo Bandas 5v5",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 5  },
-  { hora: "23:30", nombre: "Torneo Bandas 4v4",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 4  },
-  { hora: "00:45", nombre: "Torneo Bandas 4v4",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 4  },
-  { hora: "01:30", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
-  { hora: "02:00", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3  },
-  { hora: "02:45", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3  },
-  { hora: "03:30", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2  },
+  { hora: "07:00", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
+  { hora: "07:30", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2   },
+  { hora: "08:30", nombre: "Torneo Bandas 2v2",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 2   },
+  { hora: "09:15", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3   },
+  { hora: "10:00", nombre: "Tanda de Tormentas (8 tormentas)",tipo: "tormenta",    puntos: null,     rank: "F7", jugadores: null },
+  { hora: "11:00", nombre: "Torneo Bandas 4v4",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 4   },
+  { hora: "11:45", nombre: "x1 Battle Royale",                tipo: "battle",      puntos: null,     rank: "F7", jugadores: null },
+  { hora: "12:00", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
+  { hora: "13:00", nombre: "Torneo Bandas 5v5",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 5   },
+  { hora: "13:45", nombre: "x1 Battle Royale",                tipo: "battle",      puntos: null,     rank: "F7", jugadores: null },
+  { hora: "14:00", nombre: "Tanda de Tormentas (8 tormentas)",tipo: "tormenta",    puntos: null,     rank: "F7", jugadores: null },
+  { hora: "15:00", nombre: "MEGA TORNEO 5v5-10v10 (Sorteo)",  tipo: "mega_torneo", puntos: "x3 pts", rank: "F4", jugadores: null },
+  { hora: "16:00", nombre: "MEGA BATTLE ROYALE",              tipo: "mega_battle", puntos: null,     rank: "F7", jugadores: null },
+  { hora: "16:15", nombre: "DROP DEL DÍA",                    tipo: "drop",        puntos: "x1 pts", rank: "F9", jugadores: null },
+  { hora: "16:30", nombre: "Torneo Bandas 4v4",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 4   },
+  { hora: "17:15", nombre: "Torneo 1v1",                     tipo: "torneo",      puntos: "x1 pts", rank: "F1", jugadores: 100 },
+  { hora: "17:55", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3   },
+  { hora: "18:40", nombre: "Torneo Bandas 3v3",               tipo: "torneo",      puntos: "x1 pts", rank: "F4", jugadores: 3   },
 ];
 
 const EMOJIS = {
@@ -74,7 +70,7 @@ async function lanzarTorneoNormal(evento, client) {
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`inscribir_torneo:${key}`)
+      .setCustomId(`inscribir_torneo_rush:${key}`)
       .setLabel(`🎮 ¡Quiero jugar! (0)`)
       .setStyle(ButtonStyle.Success)
   );
@@ -107,7 +103,7 @@ async function lanzarTorneoNormal(evento, client) {
     try {
       const updatedRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`inscribir_torneo:${key}`)
+          .setCustomId(`inscribir_torneo_rush:${key}`)
           .setLabel(`🎮 ¡Quiero jugar! (${data.inscritos.size})`)
           .setStyle(ButtonStyle.Success)
       );
@@ -127,7 +123,7 @@ async function lanzarTorneoNormal(evento, client) {
     try {
       const disabledRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`inscribir_torneo:${key}`)
+          .setCustomId(`inscribir_torneo_rush:${key}`)
           .setLabel(`🎮 ¡Quiero jugar! (${data?.inscritos?.size ?? 0})`)
           .setStyle(ButtonStyle.Success)
           .setDisabled(true)
@@ -258,16 +254,16 @@ async function notificarPrevio(evento, tipo, client) {
 }
 
 // ── BOTONES DE INSCRIPCIÓN ────────────────────────────────────────────────────
-async function handleInscripcionButton(interaction) {
+async function handleInscripcionRushButton(interaction) {
   if (!interaction.isButton()) return;
-  const isInscribir = interaction.customId.startsWith("inscribir_torneo:");
-  const isSalir     = interaction.customId.startsWith("salir_torneo:");
+  const isInscribir = interaction.customId.startsWith("inscribir_torneo_rush:");
+  const isSalir     = interaction.customId.startsWith("salir_torneo_rush:");
   if (!isInscribir && !isSalir) return;
 
-  // Verificar que el usuario tiene rol ROLAS
-  const { ACTIVITY_ROLE_ID } = require("../config");
-  if (!interaction.member.roles.cache.has(ACTIVITY_ROLE_ID))
-    return interaction.reply({ content: "❌ Este torneo es solo para **ROLAS**. No tienes el rol de actividad ROLAS.", ephemeral: true });
+  // Verificar que el usuario tiene rol RUSH
+  const { RUSH_ACTIVITY_ROLE_ID } = require("../config");
+  if (!interaction.member.roles.cache.has(RUSH_ACTIVITY_ROLE_ID))
+    return interaction.reply({ content: "❌ Este torneo es solo para **RUSH**. No tienes el rol de actividad RUSH.", ephemeral: true });
 
   const key  = interaction.customId.split(":").slice(1).join(":");
   const data = inscripcionesActivas.get(key);
@@ -280,7 +276,7 @@ async function handleInscripcionButton(interaction) {
     if (data.maxJugadores && data.inscritos.size >= data.maxJugadores)
       return interaction.reply({ content: "❌ El torneo ya está lleno.", ephemeral: true });
     data.inscritos.add(interaction.user.id);
-    return interaction.reply({ content: `✅ Te inscribiste en el torneo ROLAS. ¡Prepárate! (${data.inscritos.size}/${data.maxJugadores ?? "∞"})`, ephemeral: true });
+    return interaction.reply({ content: `✅ Te inscribiste en el torneo RUSH. ¡Prepárate! (${data.inscritos.size}/${data.maxJugadores ?? "∞"})`, ephemeral: true });
   }
 
   if (!data.inscritos.has(interaction.user.id))
@@ -292,7 +288,7 @@ async function handleInscripcionButton(interaction) {
 // ── MOTOR PRINCIPAL ───────────────────────────────────────────────────────────
 let timers = [];
 
-function startCalendarioTask(client) {
+function startCalendarioRushTask(client) {
   timers.forEach(t => clearTimeout(t));
   timers = [];
 
@@ -347,10 +343,10 @@ function startCalendarioTask(client) {
   });
 
   // Re-programar al día siguiente
-  const t24 = setTimeout(() => startCalendarioTask(client), 24 * 60 * 60 * 1000);
+  const t24 = setTimeout(() => startCalendarioRushTask(client), 24 * 60 * 60 * 1000);
   timers.push(t24);
 
   console.log(`[CALENDARIO] ${EVENTOS.length * 3} notificaciones programadas.`);
 }
 
-module.exports = { startCalendarioTask, handleInscripcionButton, EVENTOS };
+module.exports = { startCalendarioRushTask, handleInscripcionRushButton, EVENTOS };

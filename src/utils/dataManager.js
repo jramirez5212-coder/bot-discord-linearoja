@@ -1,11 +1,14 @@
 const fs   = require("fs");
 const path = require("path");
 
-const DATA_PATH   = path.join(__dirname, "../../data/actividad.json");
-const BACKUP_PATH = path.join(__dirname, "../../data/actividad.backup.json");
-const TOPS_PATH   = path.join(__dirname, "../../data/tops.json");
+const DATA_PATH        = path.join(__dirname, "../../data/actividad.json");
+const BACKUP_PATH      = path.join(__dirname, "../../data/actividad.backup.json");
+const DATA_RUSH_PATH   = path.join(__dirname, "../../data/actividad_rush.json");
+const BACKUP_RUSH_PATH = path.join(__dirname, "../../data/actividad_rush.backup.json");
+const TOPS_PATH        = path.join(__dirname, "../../data/tops.json");
+const TOPS_RUSH_PATH   = path.join(__dirname, "../../data/tops_rush.json");
 
-// ── Actividad ──────────────────────────────────────────────────
+// ── Actividad ROLAS ────────────────────────────────────────────
 function loadData() {
   if (!fs.existsSync(DATA_PATH)) return {};
   try { return JSON.parse(fs.readFileSync(DATA_PATH, "utf8")); }
@@ -23,6 +26,26 @@ function saveData(data) {
     if (fs.existsSync(DATA_PATH)) fs.copyFileSync(DATA_PATH, BACKUP_PATH);
     fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2));
   } catch (err) { console.error("[DATA] Error guardando:", err); }
+}
+
+// ── Actividad RUSH ─────────────────────────────────────────────
+function loadDataRush() {
+  if (!fs.existsSync(DATA_RUSH_PATH)) return {};
+  try { return JSON.parse(fs.readFileSync(DATA_RUSH_PATH, "utf8")); }
+  catch {
+    if (fs.existsSync(BACKUP_RUSH_PATH))
+      return JSON.parse(fs.readFileSync(BACKUP_RUSH_PATH, "utf8"));
+    return {};
+  }
+}
+
+function saveDataRush(data) {
+  try {
+    const dir = path.dirname(DATA_RUSH_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(DATA_RUSH_PATH)) fs.copyFileSync(DATA_RUSH_PATH, BACKUP_RUSH_PATH);
+    fs.writeFileSync(DATA_RUSH_PATH, JSON.stringify(data, null, 2));
+  } catch (err) { console.error("[DATA-RUSH] Error guardando:", err); }
 }
 
 function getUser(data, userId) {
@@ -59,6 +82,18 @@ function saveTops(tops) {
   fs.writeFileSync(TOPS_PATH, JSON.stringify(tops, null, 2));
 }
 
+function loadTopsRush() {
+  if (!fs.existsSync(TOPS_RUSH_PATH)) return [];
+  try { return JSON.parse(fs.readFileSync(TOPS_RUSH_PATH, "utf8")); }
+  catch { return []; }
+}
+
+function saveTopsRush(tops) {
+  const dir = path.dirname(TOPS_RUSH_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(TOPS_RUSH_PATH, JSON.stringify(tops, null, 2));
+}
+
 // ── Helpers de fecha ───────────────────────────────────────────
 function todayKey() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
@@ -75,7 +110,8 @@ function horaMinutoColombia() {
 }
 
 module.exports = {
-  loadData, saveData, getUser, cleanOldDays,
-  loadTops, saveTops,
+  loadData, saveData, loadDataRush, saveDataRush,
+  getUser, cleanOldDays,
+  loadTops, saveTops, loadTopsRush, saveTopsRush,
   todayKey, nowColombia, horaMinutoColombia,
 };

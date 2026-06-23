@@ -2,25 +2,36 @@ const { EmbedBuilder } = require("discord.js");
 const {
   CANAL_CMD_HORAS, CANAL_CMD_INACTIVO,
   CANAL_CMD_ANUNCIOS, CANAL_CMD_TORNEO, CANAL_CMD_ADMIN,
+  RUSH_CANAL_CMD_HORAS, RUSH_CANAL_CMD_INACTIVO,
 } = require("../config");
 
 // Texto de comandos por canal
 const COMANDOS_POR_CANAL = {
   [CANAL_CMD_HORAS]: {
-    titulo: "📊 Comandos de Horas",
+    titulo: "📊 Comandos de Horas — ROLAS",
     texto: "`!horas` → Ver tus horas acumuladas\n`!top` → Ver el ranking semanal de actividad",
   },
+  // Canal RUSH de horas desactivado — RUSH no tiene sistema de horas
+  // [RUSH_CANAL_CMD_HORAS]: { ... }
   [CANAL_CMD_INACTIVO]: {
-    titulo: "📋 Comando de Inactividad",
+    titulo: "📋 Comando de Inactividad — ROLAS",
     texto: "`!inactivo` → Justificar tu inactividad (abre formulario)\n\n" +
            "⚠️ **MUY IMPORTANTE:** las fechas deben ir en formato **AÑO-MES-DÍA** (`YYYY-MM-DD`).\n" +
            "✅ Ejemplo correcto: `2026-06-20`\n" +
            "❌ Incorrecto: `20-06-2026`, `20/06/26`, `junio 20`\n\n" +
            "Si pones el formato mal, el bot puede confundirse y calcular mal tus fechas de inactividad.",
   },
+  [RUSH_CANAL_CMD_INACTIVO]: {
+    titulo: "📋 Comando de Inactividad — RUSH",
+    texto: "`!inactivorush` → Justificar tu inactividad (abre formulario)\n\n" +
+           "⚠️ **MUY IMPORTANTE:** las fechas deben ir en formato **AÑO-MES-DÍA** (`YYYY-MM-DD`).\n" +
+           "✅ Ejemplo correcto: `2026-06-20`\n" +
+           "❌ Incorrecto: `20-06-2026`, `20/06/26`, `junio 20`\n\n" +
+           "Si pones el formato mal, el bot puede confundirse y calcular mal tus fechas de inactividad.",
+  },
   [CANAL_CMD_ANUNCIOS]: {
-    titulo: "📢 Comandos de Anuncios",
-    texto: "`!activense` `!tormenta` `!battle` `!drop` → Notificar eventos a la banda\n`!tandastormentas` → Inicia tanda de 8 avisos cada 5 min\n`!paratanda` → Detiene la tanda activa",
+    titulo: "📢 Comandos de Anuncios — ROLAS",
+    texto: "`!activense` `!tormenta` `!battle` `!drop` → Notificar eventos a la banda ROLAS\n`!tandastormentas` → Inicia tanda de 8 avisos (ROLAS)\n`!paratanda` → Detiene la tanda\n\n**RUSH:**\n`!activenserush` `!tormentarush` `!battlerush` `!droprush`\n`!tandastormentasrush` → Inicia tanda RUSH\n`!paratandarush` → Detiene la tanda RUSH",
   },
   [CANAL_CMD_TORNEO]: {
     titulo: "🏆 Comandos de Torneo",
@@ -62,11 +73,10 @@ async function ensurePinnedCommands(channel) {
   }
 }
 
-// Se llama en cada mensaje nuevo en canales de comandos (después de procesar el comando)
+// Se llama en cada mensaje nuevo en canales de comandos
 async function handleComandosFijados(message) {
   if (!COMANDOS_POR_CANAL[message.channel.id]) return;
-  // Ignorar el propio mensaje fijado de comandos para no entrar en loop
-  if (message.author.bot && pinnedMessages.get(message.channel.id) === message.id) return;
+  if (message.author.bot) return; // ignorar mensajes del bot para evitar loop infinito
   await ensurePinnedCommands(message.channel);
 }
 

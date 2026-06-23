@@ -1,17 +1,22 @@
 const { EmbedBuilder }                              = require("discord.js");
-const { loadData, getUser, todayKey,
-        horaMinutoColombia, loadTops, saveTops,
-        saveData }                                  = require("../utils/dataManager");
+const { loadDataRush, saveDataRush, getUser, todayKey,
+        horaMinutoColombia, loadTopsRush, saveTopsRush } = require("../utils/dataManager");
 const { msToHours }                                 = require("../utils/format");
-const { CANAL_ACTIVIDAD_ID, CANAL_TOP_ID,
-        CANAL_LOGS_ID, ACTIVITY_ROLE_ID,
+const { RUSH_CANAL_ACTIVIDAD_ID, RUSH_CANAL_TOP_ID,
+        RUSH_CANAL_LOGS_ID, RUSH_ACTIVITY_ROLE_ID,
         TOP_ROLE_ID, STAFF_ROLE_ID,
         TOP_SIZE, GUILD_ID, LOGO_URL }              = require("../config");
 
-let embedActividadId = null;
-let embedTopId       = null;
-let lastTopWeek      = null;
-let guildCache       = null;
+// Alias para compatibilidad
+const loadData = loadDataRush;
+const saveData = saveDataRush;
+const loadTops = loadTopsRush;
+const saveTops = saveTopsRush;
+
+let embedActividadRushId = null;
+let embedTopRushId       = null;
+let lastTopWeekRush      = null;
+let guildCacheRush       = null;
 
 let _activeSessions = null;
 function getActiveSessions() {
@@ -21,33 +26,28 @@ function getActiveSessions() {
 }
 
 async function getGuild(client) {
-  if (!guildCache) {
-    guildCache = await client.guilds.fetch(GUILD_ID);
-    try {
-      await guildCache.members.fetch();
-    } catch(e) {
-      // Rate limited — esperar 30 segundos y reintentar una vez
-      console.log("[ACTIVIDAD] Rate limit en members.fetch, reintentando en 30s...");
-      await new Promise(r => setTimeout(r, 30000));
-      try { await guildCache.members.fetch(); } catch {}
+  if (!guildCacheRush) {
+    // Intentar reutilizar el caché de ROLAS para no hacer doble fetch
+    const { getGuildCache } = require("./actividadTask");
+    const cacheRolas = getGuildCache();
+    if (cacheRolas) {
+      guildCacheRush = cacheRolas;
+      return guildCacheRush;
     }
+    guildCacheRush = await client.guilds.fetch(GUILD_ID);
+    await guildCacheRush.members.fetch();
   }
-  return guildCache;
+  return guildCacheRush;
 }
 
-// Exportar para que actividadRushTask pueda reusar el mismo caché
-function setGuildCache(g) { guildCache = g; }
-function getGuildCache()  { return guildCache; }
-
-function startActividadTask(client) {
+function startActividadRushTask(client) {
   client.on("updateActividadEmbed", () => updateEmbeds(client));
   setInterval(() => updateEmbeds(client), 30 * 1000);
   setInterval(async () => {
-    try { if (guildCache) await guildCache.members.fetch(); } catch {}
+    try { if (guildCacheRush) await guildCacheRush.members.fetch(); } catch {}
   }, 10 * 60 * 1000);
   setInterval(() => checkTopSemanal(client), 60 * 1000);
-  // Retrasar el primer update para dar tiempo al members.fetch
-  setTimeout(() => updateEmbeds(client), 35000);
+  setTimeout(() => updateEmbeds(client), 5000);
 }
 
 async function updateEmbeds(client) {
@@ -59,7 +59,7 @@ async function updateEmbeds(client) {
 async function updateActividadEmbed(client) {
   try {
     const guild = await getGuild(client);
-    const canal = await client.channels.fetch(CANAL_ACTIVIDAD_ID).catch(() => null);
+    const canal = await client.channels.fetch(RUSH_CANAL_ACTIVIDAD_ID).catch(() => null);
     if (!canal) return;
 
     const data           = loadData();
@@ -67,9 +67,9 @@ async function updateActividadEmbed(client) {
     const activeSessions = getActiveSessions();
     const ahora          = Date.now();
 
-    // Usar ACTIVITY_ROLE_ID — el rol que cuenta horas
+    // Usar RUSH_ACTIVITY_ROLE_ID — el rol que cuenta horas
     const miembros = guild.members.cache.filter(m =>
-      m.roles.cache.has(ACTIVITY_ROLE_ID) && !m.user.bot
+      m.roles.cache.has(RUSH_ACTIVITY_ROLE_ID) && !m.user.bot
     );
 
     const lista = [];
@@ -77,8 +77,7 @@ async function updateActividadEmbed(client) {
       const userData = getUser(data, id);
       const guardado = userData.days?.[hoy]?.totalMs || 0;
       const sesion   = activeSessions.get(id);
-      // activeSessions ahora guarda { startMs, isRush } — solo contar si es ROLAS
-      const sesionTs = sesion && !sesion.isRush ? sesion.startMs : (userData.sessionStart || null);
+      const sesionTs = sesion && sesion.isRush ? sesion.startMs : (userData.sessionStart || null);
       const enVivo   = sesionTs ? Math.min(ahora - sesionTs, 12 * 60 * 60 * 1000) : 0;
       lista.push({ member, msTotal: guardado + enVivo, enVivo: enVivo > 0 });
     }
@@ -91,22 +90,22 @@ async function updateActividadEmbed(client) {
     if (!desc) desc = "*Nadie ha estado activo hoy.*";
 
     const embed = new EmbedBuilder()
-      .setTitle("📊 Actividad de Miembros — Voz / Radio")
+      .setTitle("📊 Actividad de Miembros RUSH — Voz / Radio")
       .setColor(0x39FF14)
       .setThumbnail(LOGO_URL)
       .setDescription(desc.slice(0, 4000))
       .setFooter({ text: "🔴 en voz ahora • Colombia (UTC-5)" })
       .setTimestamp();
 
-    if (embedActividadId) {
+    if (embedActividadRushId) {
       try {
-        const msg = await canal.messages.fetch(embedActividadId);
+        const msg = await canal.messages.fetch(embedActividadRushId);
         await msg.edit({ embeds: [embed] });
         return;
-      } catch { embedActividadId = null; }
+      } catch { embedActividadRushId = null; }
     }
     const msg = await canal.send({ embeds: [embed] });
-    embedActividadId = msg.id;
+    embedActividadRushId = msg.id;
 
   } catch (err) {
     console.error("[ACTIVIDAD] Error:", err.message);
@@ -117,24 +116,24 @@ async function updateActividadEmbed(client) {
 async function updateTopEmbed(client) {
   try {
     const guild    = await getGuild(client);
-    const canalTop = await client.channels.fetch(CANAL_TOP_ID).catch(() => null);
+    const canalTop = await client.channels.fetch(RUSH_CANAL_TOP_ID).catch(() => null);
     if (!canalTop) return;
 
     const data           = loadData();
     const activeSessions = getActiveSessions();
     const ahora          = Date.now();
 
-    // Top usa ACTIVITY_ROLE_ID para contar horas correctamente
+    // Top usa RUSH_ACTIVITY_ROLE_ID para contar horas correctamente
     // TOP_ROLE_ID es solo el rol que se da al ganador
     const miembros = guild.members.cache.filter(m =>
-      m.roles.cache.has(ACTIVITY_ROLE_ID) && !m.user.bot
+      m.roles.cache.has(RUSH_ACTIVITY_ROLE_ID) && !m.user.bot
     );
 
     const ranking = [];
     for (const [id, member] of miembros) {
       const ud     = getUser(data, id);
       const sesion = activeSessions.get(id);
-      const sesionTs = sesion && !sesion.isRush ? sesion.startMs : (ud.sessionStart || null);
+      const sesionTs = sesion && sesion.isRush ? sesion.startMs : (ud.sessionStart || null);
       const enVivo = sesionTs ? Math.min(ahora - sesionTs, 12 * 60 * 60 * 1000) : 0;
       ranking.push({
         member,
@@ -163,15 +162,15 @@ async function updateTopEmbed(client) {
       .setFooter({ text: "🔴 en voz ahora • Se actualiza cada 30s" })
       .setTimestamp();
 
-    if (embedTopId) {
+    if (embedTopRushId) {
       try {
-        const msg = await canalTop.messages.fetch(embedTopId);
+        const msg = await canalTop.messages.fetch(embedTopRushId);
         await msg.edit({ embeds: [embed] });
         return;
-      } catch { embedTopId = null; }
+      } catch { embedTopRushId = null; }
     }
     const msg = await canalTop.send({ embeds: [embed] });
-    embedTopId = msg.id;
+    embedTopRushId = msg.id;
 
   } catch (err) {
     console.error("[TOP EMBED] Error:", err.message);
@@ -186,20 +185,20 @@ async function checkTopSemanal(client) {
   });
   if (hora !== "00:01" || fecha !== "Monday") return;
   const semanaActual = todayKey();
-  if (lastTopWeek === semanaActual) return;
-  lastTopWeek = semanaActual;
+  if (lastTopWeekRush === semanaActual) return;
+  lastTopWeekRush = semanaActual;
   console.log("[TOP] Ejecutando top semanal...");
 
   try {
     const guild = await getGuild(client);
-    await guildCache.members.fetch();
+    await guildCacheRush.members.fetch();
     const data     = loadData();
-    const canalTop = await client.channels.fetch(CANAL_TOP_ID).catch(() => null);
-    const canalLog = await client.channels.fetch(CANAL_LOGS_ID).catch(() => null);
+    const canalTop = await client.channels.fetch(RUSH_CANAL_TOP_ID).catch(() => null);
+    const canalLog = await client.channels.fetch(RUSH_CANAL_LOGS_ID).catch(() => null);
 
-    // Usar ACTIVITY_ROLE_ID para el ranking
+    // Usar RUSH_ACTIVITY_ROLE_ID para el ranking
     const miembros = guild.members.cache.filter(m =>
-      m.roles.cache.has(ACTIVITY_ROLE_ID) && !m.user.bot
+      m.roles.cache.has(RUSH_ACTIVITY_ROLE_ID) && !m.user.bot
     );
 
     const ranking = [];
@@ -241,7 +240,7 @@ async function checkTopSemanal(client) {
       }
     }
     saveData(data);
-    embedTopId = null;
+    embedTopRushId = null;
 
     if (canalTop && ganadores) {
       await canalTop.send({
@@ -276,4 +275,4 @@ async function checkTopSemanal(client) {
   }
 }
 
-module.exports = { startActividadTask, updateActividadEmbed, getGuildCache, setGuildCache };
+module.exports = { startActividadRushTask, updateActividadEmbed };

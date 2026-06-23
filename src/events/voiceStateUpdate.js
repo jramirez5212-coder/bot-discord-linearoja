@@ -1,25 +1,43 @@
-const { loadData, saveData, getUser, cleanOldDays, todayKey } = require("../utils/dataManager");
-const { ACTIVITY_ROLE_ID, MAX_SESSION_MS, AFK_CHANNEL_ID }   = require("../config");
+const { loadData, saveData, loadDataRush, saveDataRush, getUser, cleanOldDays, todayKey } = require("../utils/dataManager");
+const { ACTIVITY_ROLE_ID, RUSH_ACTIVITY_ROLE_ID, MAX_SESSION_MS, AFK_CHANNEL_ID } = require("../config");
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
-const TIEMPO_ENSORDECIDO_MS = 5 * 60 * 1000; // 5 min
-const TIEMPO_SILENCIADO_MS  = 8 * 60 * 1000; // 8 min
-const antiFarmeoTimers = new Map(); // userId -> timeout
+const TIEMPO_ENSORDECIDO_MS = 5 * 60 * 1000;
+const TIEMPO_SILENCIADO_MS  = 8 * 60 * 1000;
+const antiFarmeoTimers = new Map();
 const CANAL_LOGS_VOZ_ID = "1516294458591674530";
 
+// Usuarios exentos del anti-farmeo
+const afkExemptos     = new Set();
+const afkExemptosMute = new Set();
+const afkExemptoDeaf  = new Set();
+
 // Sesiones activas en memoria
-const activeSessions = new Map();
+const activeSessions = new Map(); // userId -> { startMs, isRush }
 const pendingUpdates = new Map();
 
-// Al arrancar el bot, recuperar sesiones activas del JSON
+// Detecta si el miembro es ROLAS, RUSH o ninguno
+function detectarSistema(member) {
+  if (member.roles.cache.has(ACTIVITY_ROLE_ID))      return "ROLAS";
+  if (member.roles.cache.has(RUSH_ACTIVITY_ROLE_ID)) return "RUSH";
+  return null;
+}
+
+// Carga y guarda el archivo correcto según el sistema
+function cargarDatos(isRush) { return isRush ? loadDataRush() : loadData(); }
+function guardarDatos(data, isRush) { isRush ? saveDataRush(data) : saveData(data); }
+
+// Al arrancar: recuperar sesiones activas de ambos archivos
 function recoverSessions(client) {
   try {
-    const data = loadData();
-    for (const userId in data) {
-      const ud = data[userId];
-      if (ud.sessionStart) {
-        activeSessions.set(userId, ud.sessionStart);
-        console.log(`[VOZ] ↩ Sesión recuperada: ${userId} desde ${new Date(ud.sessionStart).toLocaleTimeString()}`);
+    for (const [isRush, label] of [[false,"ROLAS"],[true,"RUSH"]]) {
+      const data = cargarDatos(isRush);
+      for (const userId in data) {
+        const ud = data[userId];
+        if (ud.sessionStart) {
+          activeSessions.set(userId, { startMs: ud.sessionStart, isRush });
+          console.log(`[VOZ-${label}] ↩ Sesión recuperada: ${userId} desde ${new Date(ud.sessionStart).toLocaleTimeString()}`);
+        }
       }
     }
   } catch(e) { console.error("[VOZ] Error recuperando sesiones:", e.message); }
@@ -29,44 +47,49 @@ module.exports = {
   activeSessions,
   recoverSessions,
   handleAntiFarmeoButton,
+  afkExemptos,
+  afkExemptosMute,
+  afkExemptoDeaf,
 
   async execute(oldState, newState, client) {
     const member = newState.member || oldState.member;
     if (!member || member.user.bot) return;
-    if (!member.roles.cache.has(ACTIVITY_ROLE_ID)) return;
 
-    const userId    = member.id;
-    const entró     = !oldState.channelId && newState.channelId;
-    const salió     = oldState.channelId  && !newState.channelId;
-    const cambióCh  = oldState.channelId  && newState.channelId && oldState.channelId !== newState.channelId;
+    const sistema = detectarSistema(member);
+    if (!sistema) return; // No tiene rol de actividad ni ROLAS ni RUSH
 
-    // Ignorar canal AFK
+    // RUSH no trackea horas de voz — solo ROLAS
+    if (sistema === "RUSH") return;
+    const userId  = member.id;
+    const entró   = !oldState.channelId && newState.channelId;
+    const salió   = oldState.channelId  && !newState.channelId;
+    const cambióCh = oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId;
+
     const nuevoCanalEsAFK = newState.channelId === AFK_CHANNEL_ID;
     const viejoCanalEsAFK = oldState.channelId === AFK_CHANNEL_ID;
 
-    // ── ENTRÓ A VOZ (o salió de AFK) ────────────────────────
+    // ── ENTRÓ A VOZ ──────────────────────────────────────────
     if ((entró && !nuevoCanalEsAFK) || (cambióCh && viejoCanalEsAFK && !nuevoCanalEsAFK)) {
       const ahora = Date.now();
-      activeSessions.set(userId, ahora);
+      activeSessions.set(userId, { startMs: ahora, isRush });
 
-      // Guardar sessionStart en JSON para recuperar tras reinicio
-      const data     = loadData();
+      const data     = cargarDatos(isRush);
       const userData = getUser(data, userId);
       userData.sessionStart = ahora;
-      saveData(data);
+      guardarDatos(data, isRush);
 
-      console.log(`[VOZ] ▶ ${member.user.tag} entró a #${newState.channel?.name}`);
-      // Log de Discord desactivado (solo se mantiene el log en consola)
+      console.log(`[VOZ-${sistema}] ▶ ${member.user.tag} entró a #${newState.channel?.name}`);
     }
 
-    // ── SALIÓ DE VOZ (o entró a AFK) ───────────────────────
+    // ── SALIÓ DE VOZ ─────────────────────────────────────────
     if ((salió && !viejoCanalEsAFK) || (cambióCh && !viejoCanalEsAFK && nuevoCanalEsAFK)) {
-      const joinedAt = activeSessions.get(userId);
-      if (joinedAt) {
-        const duration = Date.now() - joinedAt;
+      const sesion = activeSessions.get(userId);
+      if (sesion) {
+        const duration = Date.now() - sesion.startMs;
+        const sesIsRush = sesion.isRush;
 
         if (duration > 0 && duration < MAX_SESSION_MS) {
-          const data     = loadData();
+          const data     = cargarDatos(sesIsRush);
           const userData = getUser(data, userId);
           const hoy      = todayKey();
 
@@ -78,7 +101,7 @@ module.exports = {
           userData.days[hoy].totalMs += duration;
 
           // Racha de días seguidos
-          const ayer = new Date();
+          const ayer    = new Date();
           ayer.setDate(ayer.getDate() - 1);
           const ayerKey = ayer.toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
           if (userData.ultimoDiaContinuo === ayerKey || userData.ultimoDiaContinuo === hoy) {
@@ -91,18 +114,15 @@ module.exports = {
             userData.ultimoDiaContinuo = hoy;
           }
 
-          // Limpiar sessionStart
           delete userData.sessionStart;
           cleanOldDays(userData);
-          saveData(data);
-          console.log(`[VOZ] ✓ ${member.user.tag} +${Math.floor(duration/60000)}m guardado`);
-          // Log de Discord desactivado (solo se mantiene el log en consola)
+          guardarDatos(data, sesIsRush);
+          console.log(`[VOZ-${sesIsRush ? "RUSH" : "ROLAS"}] ✓ ${member.user.tag} +${Math.floor(duration/60000)}m guardado`);
         } else {
-          // Limpiar sessionStart aunque no se guarden horas
-          const data     = loadData();
+          const data     = cargarDatos(sesIsRush);
           const userData = getUser(data, userId);
           delete userData.sessionStart;
-          saveData(data);
+          guardarDatos(data, sesIsRush);
         }
 
         activeSessions.delete(userId);
@@ -114,30 +134,31 @@ module.exports = {
         pendingUpdates.delete(userId);
       }, 5000));
 
-      // Salió de voz: cancelar timer de anti-farmeo si lo tenía
       clearTimeout(antiFarmeoTimers.get(userId));
       antiFarmeoTimers.delete(userId);
     }
 
-    // ── ANTI-FARMEO: detectar ensordecido / silenciado ─────
+    // ── ANTI-FARMEO ───────────────────────────────────────────
     if (newState.channelId && !nuevoCanalEsAFK) {
       const estaEnsordecido = newState.selfDeaf || newState.deaf;
       const estaSilenciado  = (newState.selfMute || newState.mute) && !estaEnsordecido;
 
-      if (estaEnsordecido || estaSilenciado) {
-        // Solo arrancar timer si no hay uno ya corriendo para este usuario
+      const exentoTotal = afkExemptos.has(userId);
+      const exentoDeaf  = afkExemptoDeaf.has(userId);
+      const exentoMute  = afkExemptosMute.has(userId);
+
+      if ((estaEnsordecido && !exentoTotal && !exentoDeaf) ||
+          (estaSilenciado  && !exentoTotal && !exentoMute)) {
         if (!antiFarmeoTimers.has(userId)) {
           const tiempoEspera = estaEnsordecido ? TIEMPO_ENSORDECIDO_MS : TIEMPO_SILENCIADO_MS;
           const timer = setTimeout(() => enviarChequeoAntiFarmeo(member, client, userId), tiempoEspera);
           antiFarmeoTimers.set(userId, timer);
         }
       } else {
-        // Ya no está ensordecido ni silenciado: cancelar timer
         clearTimeout(antiFarmeoTimers.get(userId));
         antiFarmeoTimers.delete(userId);
       }
     } else {
-      // Salió del canal o entró a AFK: cancelar timer
       clearTimeout(antiFarmeoTimers.get(userId));
       antiFarmeoTimers.delete(userId);
     }
@@ -147,8 +168,7 @@ module.exports = {
 async function enviarChequeoAntiFarmeo(member, client, userId) {
   antiFarmeoTimers.delete(userId);
 
-  // Verificar que sigue en voz y sigue ensordecido/silenciado
-  const guild = member.guild;
+  const guild       = member.guild;
   const freshMember = await guild.members.fetch(userId).catch(() => null);
   if (!freshMember || !freshMember.voice.channelId) return;
   if (freshMember.voice.channelId === AFK_CHANNEL_ID) return;
@@ -175,12 +195,10 @@ async function enviarChequeoAntiFarmeo(member, client, userId) {
   try {
     await freshMember.send({ embeds: [embed], components: [row] });
   } catch {
-    // No se pudo mandar DM (privados cerrados): mover directo a AFK
     moverAAFK(freshMember);
     return;
   }
 
-  // Si no responde en 2 minutos, mover a AFK
   setTimeout(async () => {
     if (respondido) return;
     const m = await guild.members.fetch(userId).catch(() => null);
@@ -194,7 +212,7 @@ async function enviarChequeoAntiFarmeo(member, client, userId) {
 async function moverAAFK(member) {
   try {
     await member.voice.setChannel(AFK_CHANNEL_ID);
-    console.log(`[ANTIFARMEO] ${member.user.tag} movido a AFK por inactividad/ensordecido sin respuesta.`);
+    console.log(`[ANTIFARMEO] ${member.user.tag} movido a AFK.`);
   } catch (e) {
     console.error("[ANTIFARMEO] Error moviendo a AFK:", e.message);
   }
@@ -226,9 +244,7 @@ async function handleAntiFarmeoButton(interaction) {
     return;
   }
 
-  // Quiere moverse al AFK voluntariamente
   try {
-    // Buscar el member en todos los guilds donde el bot esté (DM no tiene guild)
     for (const [, guild] of interaction.client.guilds.cache) {
       const m = await guild.members.fetch(userId).catch(() => null);
       if (m?.voice?.channelId) { await moverAAFK(m); break; }
